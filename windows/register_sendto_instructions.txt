@@ -1,0 +1,6 @@
+Alternativa al menu contestuale: SendTo
+
+1) Copia `p7m-portable.exe` in una cartella (es. C:\Tools\).
+2) Apri la cartella SendTo: Win+R -> shell:sendto
+3) Crea un collegamento a p7m-portable.exe dentro SendTo.
+4) Ora puoi fare click destro su file .p7m -> Invia a -> p7m-portable.
