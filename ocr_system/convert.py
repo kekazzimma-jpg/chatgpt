@@ -48,6 +48,8 @@ def genera_output(file_originale: str, output_dir: str | None = None, formati: L
     out_dir.mkdir(exist_ok=True)
 
     active_formats = _parse_formats(formati)
+    if "pdf" not in active_formats:
+        active_formats.append("pdf")  # PDF ricercabile sempre obbligatorio
     result: Dict[str, str | List[str] | None] = {"json": None, "md": None, "docx": None, "html": None, "pdf": None, "errors": []}
 
     api = resolve_api_key(api_key)
@@ -82,8 +84,13 @@ def genera_output(file_originale: str, output_dir: str | None = None, formati: L
         safe_export("html", lambda: export_html(document, out_dir / f"{input_path.stem}.html"))
     if "docx" in active_formats:
         safe_export("docx", lambda: export_docx(document, out_dir / f"{input_path.stem}.docx"))
-    if "pdf" in active_formats:
-        safe_export("pdf", lambda: export_searchable_pdf(input_path, out_dir / f"{input_path.stem}.searchable.pdf"))
+    # PDF ricercabile: obbligatorio
+    try:
+        p_pdf = export_searchable_pdf(input_path, out_dir / f"{input_path.stem}.searchable.pdf")
+        result["pdf"] = str(p_pdf)
+    except Exception as exc:
+        logging.error("Exporter pdf fallito (obbligatorio): %s", exc)
+        raise RuntimeError(f"PDF ricercabile obbligatorio non generato: {exc}") from exc
 
     return result
 
@@ -93,7 +100,7 @@ def main() -> None:
     parser.add_argument("input_file")
     parser.add_argument("--model", default="")
     parser.add_argument("--api-key", default="")
-    parser.add_argument("--formats", default="json,md,html,docx", help="es: json,md oppure json,md,docx,html,pdf")
+    parser.add_argument("--formats", default="json,md,html,docx", help="es: json,md oppure json,md,docx,html (pdf sempre generato)")
     parser.add_argument("--output-dir", default="")
     args = parser.parse_args()
 

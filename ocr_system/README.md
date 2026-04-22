@@ -1,68 +1,182 @@
-# OCR System (rifattorizzato con JSON intermedio)
+# OCR System Windows (Guida completa per neofiti)
 
-## Cosa resta invariato lato utente
+> Questo progetto converte PDF/JPG/PNG in output strutturati usando Gemini.
+> È pensato per funzionare anche da menu contestuale (tasto destro) su Windows.
 
-- uso da menu contestuale Windows (`run_ocr.cmd`): invariato
-- API key in `.env`: invariato
-- output in cartella `OCR` vicino al file sorgente: invariato
-- input supportati: PDF/JPG/JPEG/PNG
+---
 
-## Nuova architettura (pragmatica)
+## 1) A cosa serve, in parole semplici
 
-- `convert.py`: orchestratore + funzione `genera_output(...)`
-- `ocr_core.py`: OCR Gemini -> JSON strutturato
-- `prompts.py`: prompt OCR strutturato
-- `document_model.py`: normalizzazione/validazione/fallback JSON
-- `exporters.py`: exporter separati (`json`, `md`, `docx`, `html`, `pdf` opzionale)
+Il sistema prende un documento (PDF immagine, PDF misto, scansione, JPG/PNG) e genera:
 
-Pipeline:
+1. **JSON strutturato** (`.ocr.json`) → base tecnica centrale del progetto.
+2. **Markdown** (`.md`) → facile da leggere e ottimo per LLM.
+3. **HTML** (`.html`) → versione leggibile web.
+4. **DOCX** (`.docx`) → editabile in Word.
+5. **PDF ricercabile** (`.searchable.pdf`) → **obbligatorio**, sempre generato.
+
+Tutti i file finiscono nella cartella `OCR` accanto al file originale.
+
+---
+
+## 2) Cosa è cambiato nella rifattorizzazione
+
+Prima c'era un file unico molto carico.
+Ora l'architettura è separata e più chiara:
+
+- `convert.py` → orchestratore (coordina il flusso)
+- `ocr_core.py` → dialogo con Gemini e OCR strutturato
+- `prompts.py` → prompt OCR in JSON
+- `document_model.py` → schema/fallback/normalizzazione JSON
+- `exporters.py` → conversione JSON -> md/docx/html/pdf
+
+Pipeline logica:
 
 ```text
-input -> ocr_core (Gemini) -> JSON intermedio -> exporters
+input -> OCR Gemini -> JSON intermedio -> exporter separati
 ```
 
-## JSON intermedio
+---
 
-File sempre generato: `nomefile.ocr.json`
+## 3) Installazione rapida (utente Windows)
 
-Contiene:
+### Metodo consigliato
+
+Apri `cmd.exe` nella cartella `ocr_system` e lancia:
+
+```bat
+setup_portable_windows.cmd
+```
+
+### Installazione completa/forzata (quando serve)
+
+```bat
+setup_full_update.cmd
+```
+
+Usala se:
+- hai errori di dipendenze,
+- vuoi aggiornare tutto,
+- vuoi reimpostare API key.
+
+### Se hai spostato la cartella
+
+```bat
+refresh_context_menu.cmd
+```
+
+---
+
+## 4) Dove mettere la API key
+
+Nel file:
+
+```text
+ocr_system/.env
+```
+
+Esempio:
+
+```env
+GOOGLE_API_KEY=la_tua_chiave
+GEMINI_MODEL=gemini-3.1-flash-lite
+```
+
+---
+
+## 5) Uso da tasto destro
+
+1. Tasto destro su PDF/JPG/PNG
+2. **Converti in MD + HTML (OCR)**
+3. Vai nella cartella `OCR` creata accanto al file sorgente
+
+---
+
+## 6) Uso da terminale
+
+```bat
+python convert.py "C:\path\documento.pdf"
+```
+
+Formati opzionali:
+
+```bat
+python convert.py "file.pdf" --formats json,md
+python convert.py "file.pdf" --formats json,md,html,docx
+```
+
+> Nota: il **PDF ricercabile viene comunque generato sempre** (obbligatorio progetto).
+
+---
+
+## 7) PDF ricercabile: requisito obbligatorio
+
+Il progetto ora tratta il PDF ricercabile come output obbligatorio.
+
+Se non viene generato:
+- la conversione viene considerata fallita,
+- nel log trovi il motivo.
+
+Dipendenze necessarie:
+- `ocrmypdf` (installato via requirements)
+- dipendenze di sistema richieste da `ocrmypdf` (in alcuni PC possono richiedere installazioni aggiuntive).
+
+---
+
+## 8) File di log (fondamentali)
+
+Dentro `OCR/` trovi:
+
+- `ocr_run.log` → log launcher/menu contestuale
+- `ocr_debug.log` → log tecnico dettagliato Python
+
+Se qualcosa va storto, condividi questi log.
+
+---
+
+## 9) Struttura output JSON (intermedio)
+
+Il file `*.ocr.json` contiene:
+
 - `document_info`
 - `metadata`
 - `pages[]`
-  - `header/footer/page_notes/layout_quality`
-  - `blocks[]` ordinati con `type`, `content`, `style`, `inline_spans`, `reading_order`, `source_page`
+  - `header`, `footer`, `layout_quality`, `page_notes`
+  - `blocks[]` con:
+    - `type`
+    - `content`
+    - `style`
+    - `inline_spans`
+    - `reading_order`
+    - `source_page`
 
-Se Gemini restituisce JSON invalido, viene attivato fallback robusto (documento minimale + warning).
+Questo JSON è la base comune per tutti gli exporter.
 
-## Output e default
+---
 
-### Funzione Python
+## 10) Documentazione extra (per non perdere il filo)
 
-```python
-from convert import genera_output
+Vedi cartella `docs/`:
 
-out = genera_output("file.pdf")
-```
+- `PROJECT_DETAILS.md` → descrizione tecnica completa del progetto
+- `CHANGELOG_OPERATIVO.md` → cronologia modifiche e problemi affrontati
+- `ROADMAP.md` → cosa è già fatto e cosa manca
 
-Default funzione: `json`, `md`.
+---
 
-### CLI / launcher
+## 11) Limiti noti (trasparenza totale)
 
-Per mantenere compatibilità pratica con il flusso attuale, la CLI usa default:
-`json,md,html,docx`
+- Qualità OCR dipende molto dalla qualità scansione.
+- Alcune formattazioni complesse (documenti molto degradati) possono non essere perfette.
+- `ocrmypdf` su Windows può richiedere componenti di sistema aggiuntive in certi ambienti.
 
-```bash
-python convert.py "file.pdf" --formats json,md
-python convert.py "file.pdf" --formats json,md,docx,html
-python convert.py "file.pdf" --formats json,md,pdf
-```
+---
 
-## DOCX
+## 12) Regola pratica di debug
 
-Il DOCX ora nasce dal JSON con `python-docx` (non più da HTML).
-Gestisce heading, paragrafi, liste, tabelle, firme, page break e inline spans (bold/italic/underline).
+Se un run fallisce:
+1. apri `OCR/ocr_run.log`
+2. apri `OCR/ocr_debug.log`
+3. esegui `setup_full_update.cmd`
+4. riprova su un PDF corto (1-2 pagine)
 
-## PDF ricercabile (opzionale)
-
-Formato `pdf` usa `ocrmypdf` se disponibile nel sistema.
-Se non disponibile, viene registrato errore exporter senza bloccare gli altri output.

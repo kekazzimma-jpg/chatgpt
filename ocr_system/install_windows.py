@@ -23,7 +23,13 @@ def ensure_venv(base_dir: Path, full_install: bool) -> Path:
         subprocess.check_call([str(python_exe), "-m", "pip", "install", "--upgrade", "pip"])
         subprocess.check_call([str(python_exe), "-m", "pip", "install", "-r", str(base_dir / "requirements.txt")])
     else:
-        print("Install dipendenze saltata (modalità rapida). Usa --full per reinstallare/aggiornare.")
+        # modalità rapida ma con verifica minima dipendenze obbligatorie
+        check = subprocess.run([str(python_exe), "-c", "import fitz,requests,docx,ocrmypdf"], capture_output=True, text=True)
+        if check.returncode != 0:
+            print("Dipendenze mancanti rilevate, installo requirements...")
+            subprocess.check_call([str(python_exe), "-m", "pip", "install", "-r", str(base_dir / "requirements.txt")])
+        else:
+            print("Install dipendenze saltata (modalità rapida): requisiti già presenti.")
 
     return python_exe
 

@@ -185,10 +185,23 @@ def export_docx(document: Dict[str, Any], out_path: Path) -> Path:
 
 
 def export_searchable_pdf(input_path: Path, out_path: Path) -> Path:
-    import shutil
+    import importlib.util
     import subprocess
+    import sys
 
-    if shutil.which("ocrmypdf") is None:
-        raise RuntimeError("ocrmypdf non disponibile")
-    subprocess.check_call(["ocrmypdf", str(input_path), str(out_path), "--skip-text"])
+    if importlib.util.find_spec("ocrmypdf") is None:
+        raise RuntimeError(
+            "ocrmypdf non installato nell'ambiente corrente. "
+            "Esegui setup_full_update.cmd o installa manualmente ocrmypdf + dipendenze sistema."
+        )
+
+    subprocess.check_call([
+        sys.executable,
+        "-m",
+        "ocrmypdf",
+        str(input_path),
+        str(out_path),
+        "--skip-text",
+        "--force-ocr",
+    ])
     return out_path
