@@ -192,3 +192,15 @@ Per ridurre i casi di testo incompleto:
 
 Questa doppia strategia serve proprio per evitare perdita di intere porzioni di testo.
 
+
+---
+
+## 14) Perché prima mancavano pezzi di testo
+
+Cause identificate:
+- alcuni blocchi `list` arrivavano con testo nel campo `content` ma senza array `items`;
+- alcuni `inline_spans` includevano testo troncato con `...`, mentre `content` era completo.
+
+Fix applicati:
+- exporter ora ricostruiscono le liste anche quando `items` è assente;
+- exporter e normalizzazione preferiscono `content` completo quando gli spans sono troncati o troppo corti.

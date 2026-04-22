@@ -92,6 +92,12 @@ def _normalize_block(block: Dict[str, Any], page_number: int, idx: int) -> Dict[
     merged_style.update(style)
 
     spans = block.get("inline_spans") if isinstance(block.get("inline_spans"), list) else []
+    if spans:
+        joined = "".join(str(sp.get("text", "")) for sp in spans if isinstance(sp, dict))
+        if ("..." in joined or "…" in joined) and len(content) > len(joined):
+            spans = [{"text": content, "bold": False, "italic": False, "underline": False, "all_caps": False}]
+        elif len(joined.strip()) < max(20, int(len(content) * 0.6)):
+            spans = [{"text": content, "bold": False, "italic": False, "underline": False, "all_caps": False}]
     if not spans:
         spans = [{"text": content, "bold": False, "italic": False, "underline": False, "all_caps": False}]
 

@@ -26,3 +26,7 @@
 - qualità JSON blocchi/inline_spans
 - presenza PDF ricercabile
 - warning OCR
+
+7. Perdita testo in Markdown da JSON valido
+   - Causa: blocchi `list` senza `items` venivano quasi ignorati e `inline_spans` troncati con `...` sovrascrivevano il `content` completo.
+   - Soluzione: fallback parsing lista da `content` + uso `content` completo quando spans risultano troncati o troppo corti.

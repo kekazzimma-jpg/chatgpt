@@ -24,11 +24,33 @@ def _style_wrap_md(text: str, span: Dict[str, Any]) -> str:
 
 
 def _block_text_md(block: Dict[str, Any]) -> str:
+    content = str(block.get("content", ""))
     spans = block.get("inline_spans", [])
     if spans:
+        joined_raw = "".join(str(s.get("text", "")) for s in spans)
+        if _is_truncated_span_text(joined_raw) and len(content) > len(joined_raw):
+            return content
+        if len(joined_raw.strip()) < max(20, int(len(content) * 0.6)):
+            return content
         return "".join(_style_wrap_md(str(s.get("text", "")), s) for s in spans)
-    return str(block.get("content", ""))
+    return content
 
+
+
+
+def _is_truncated_span_text(text: str) -> bool:
+    return "..." in text or "…" in text
+
+
+def _fallback_list_items_from_content(content: str) -> List[str]:
+    lines = [ln.strip() for ln in content.splitlines() if ln.strip()]
+    out: List[str] = []
+    for ln in lines:
+        ln2 = ln
+        if ln.startswith("- "):
+            ln2 = ln[2:].strip()
+        out.append(ln2)
+    return out
 
 def export_markdown(document: Dict[str, Any], out_path: Path, include_headers: bool = False, include_footers: bool = False) -> Path:
     lines: List[str] = []
@@ -48,9 +70,13 @@ def export_markdown(document: Dict[str, Any], out_path: Path, include_headers: b
             elif btype == "list":
                 ltype = block.get("list_type", "unordered")
                 items = block.get("items", []) if isinstance(block.get("items"), list) else []
-                for i, item in enumerate(items, start=1):
-                    itxt = str(item.get("content", "")).strip()
-                    lines.append((f"{i}. " if ltype == "ordered" else "- ") + itxt)
+                if items:
+                    for i, item in enumerate(items, start=1):
+                        itxt = str(item.get("content", "")).strip()
+                        lines.append((f"{i}. " if ltype == "ordered" else "- ") + itxt)
+                else:
+                    for i, txt_item in enumerate(_fallback_list_items_from_content(str(block.get("content", ""))), start=1):
+                        lines.append((f"{i}. " if ltype == "ordered" else "- ") + txt_item)
             elif btype == "table":
                 headers = block.get("headers", []) if isinstance(block.get("headers"), list) else []
                 rows = block.get("rows", []) if isinstance(block.get("rows"), list) else []
@@ -91,6 +117,8 @@ def export_html(document: Dict[str, Any], out_path: Path) -> Path:
                 html.append(f"<h{lvl}>{content}</h{lvl}>")
             elif t == "list":
                 items = block.get("items", []) if isinstance(block.get("items"), list) else []
+                if not items:
+                    items = [{"content": x} for x in _fallback_list_items_from_content(str(block.get("content", "")))]
                 tag = "ol" if block.get("list_type") == "ordered" else "ul"
                 html.append(f"<{tag}>")
                 for it in items:
@@ -163,6 +191,8 @@ def export_docx(document: Dict[str, Any], out_path: Path) -> Path:
 
             if t == "list":
                 items = block.get("items", []) if isinstance(block.get("items"), list) else []
+                if not items:
+                    items = [{"content": x} for x in _fallback_list_items_from_content(str(block.get("content", "")))]
                 for item in items:
                     lp = doc.add_paragraph(style="List Number" if block.get("list_type") == "ordered" else "List Bullet")
                     lp.add_run(str(item.get("content", "")))

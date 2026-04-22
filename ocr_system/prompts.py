@@ -5,6 +5,7 @@ Analizza le immagini/pagine ricevute e restituisci SOLO JSON valido (senza markd
 
 Vincoli fondamentali:
 - Non inventare dati; se incerto usa null, [] o "[illeggibile]".
+- NON riassumere e NON abbreviare con "..." o testi tronchi: trascrivi integralmente il testo leggibile.
 - Mantieni ordine di lettura reale.
 - Supporta multipagina.
 - Usa i tipi blocco ammessi:
