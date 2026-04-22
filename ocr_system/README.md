@@ -1,56 +1,83 @@
-# Sistema OCR adattivo → Markdown + HTML
+# Sistema OCR portatile → Markdown + HTML
 
-Questo progetto converte automaticamente:
+Obiettivo: usare **quasi solo il menu contestuale Windows** (click destro), con setup semplice anche su PC diversi.
+
+## Cosa fa
+
+Converte automaticamente:
 - PDF con testo selezionabile,
-- PDF scansiti (testo raster o scritto a mano),
+- PDF scansiti (raster o scritto a mano),
 - PDF misti,
 - immagini JPG/JPEG/PNG,
 
-in **2 output** dentro una cartella `OCR` (creata accanto al file originale):
+in **2 output** nella cartella `OCR` (accanto al file sorgente):
 1. `nomefile.md` (ottimizzato per LLM)
-2. `nomefile.html` (resa visuale il più fedele possibile)
+2. `nomefile.html` (resa visuale più fedele possibile)
 
-## Strategia automatica
+## Strategia adattiva
 
-Lo script rileva il tipo di input:
-- `pdf_digital`: usa testo selezionabile + preview pagina per migliorare struttura.
-- `pdf_scanned`: usa OCR vision pagina per pagina.
-- `pdf_mixed`: tratta il documento come vision multi-pagina per evitare perdita di blocchi raster.
-- `image`: OCR vision diretto su immagine.
+Lo script sceglie in automatico la procedura migliore:
+- `pdf_digital`: usa testo selezionabile + preview pagina.
+- `pdf_scanned`: OCR vision pagina per pagina.
+- `pdf_mixed`: OCR vision multi-pagina (evita perdita blocchi raster).
+- `image`: OCR vision diretto.
 
-## Requisiti
+## Installazione rapida (portabile)
 
-- Python 3.10+
-- API key Google AI Studio (`GOOGLE_API_KEY`)
-- Modello impostato di default: `gemini-3.1-flash-lite` (override con `--model` o `GEMINI_MODEL`)
+1. Copia la cartella `ocr_system` dove vuoi (es: chiavetta, cloud sync, ecc.).
+2. Apri PowerShell in quella cartella.
+3. Esegui:
 
-Installa dipendenze:
-
-```bash
-pip install -r requirements.txt
+```powershell
+.\setup_portable_windows.ps1
 ```
 
-## Uso da terminale
+Lo script farà tutto:
+- crea `.venv` locale,
+- installa dipendenze,
+- ti chiede la chiave Google AI Studio,
+- salva la chiave in `ocr_system/.env`,
+- registra il menu contestuale per `.pdf/.jpg/.jpeg/.png` (utente corrente, senza admin).
+
+## Dove inserire e salvare la API key Google
+
+La chiave viene salvata in:
+
+`ocr_system/.env`
+
+Esempio:
+
+```env
+GOOGLE_API_KEY=la_tua_chiave
+GEMINI_MODEL=gemini-3.1-flash-lite
+```
+
+Ordine di priorità usato dal programma:
+1. `--api-key` da riga comando
+2. variabile ambiente `GOOGLE_API_KEY`
+3. file locale `ocr_system/.env`
+
+## Uso quotidiano (principale)
+
+- Tasto destro sul file → **Converti in MD + HTML (OCR)**.
+- Il sistema crea automaticamente la cartella `OCR` vicino al file sorgente.
+
+## Uso da terminale (opzionale)
 
 ```bash
 python convert.py "C:\\path\\documento.pdf"
 ```
 
-Opzioni:
+## File principali
 
-```bash
-python convert.py "file.pdf" --api-key "..." --model "gemini-3.1-flash-lite"
-```
+- `convert.py`: motore OCR/adattivo
+- `run_ocr.cmd`: launcher chiamato dal menu contestuale
+- `setup_portable_windows.ps1`: setup automatico portabile
+- `.env.example`: template configurazione API
+- `requirements.txt`: dipendenze Python
 
-## Integrazione menu contestuale Windows
+## Note
 
-1. Copia questa cartella in `C:\OCR\` (oppure modifica il path nel `.reg`).
-2. Installa dipendenze Python nell'ambiente usato dal comando `python`.
-3. Fai doppio click su `install_windows_context_menu.reg` e conferma.
-4. Da Esplora File: tasto destro su PDF/JPG/PNG → **Converti in MD + HTML (OCR)**.
-
-## Note pratiche
-
-- Per PDF molto lunghi, il costo token può salire: conviene usare batch pagine o chunking.
-- Per documenti sensibili, valuta policy privacy prima di inviare file a API esterne.
-- L'HTML è “fedele” ma non garantisce pixel-perfect su tutti i layout complessi.
+- Se sposti la cartella su un altro PC, riesegui `setup_portable_windows.ps1`.
+- Il modello di default è `gemini-3.1-flash-lite`.
+- Per documenti molto lunghi può servire chunking (estensione futura).

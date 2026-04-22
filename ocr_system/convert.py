@@ -10,21 +10,21 @@ from __future__ import annotations
 
 import argparse
 import base64
-import io
 import json
 import mimetypes
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List
+from typing import Dict, List
 
 import fitz  # PyMuPDF
-from PIL import Image
 import requests
-
 
 GOOGLE_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 DEFAULT_MODEL = "gemini-3.1-flash-lite"
+BASE_DIR = Path(__file__).resolve().parent
+ENV_PATH = BASE_DIR / ".env"
+CONFIG_PATH = BASE_DIR / "config.json"
 
 
 @dataclass
@@ -44,6 +44,50 @@ PROMPT_HTML = (
     "preservando il più possibile impaginazione e formattazione visiva. "
     "Usa CSS inline o in <style>. Restituisci SOLO HTML valido."
 )
+
+
+def parse_dotenv(path: Path) -> Dict[str, str]:
+    if not path.exists():
+        return {}
+    data: Dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        data[key.strip()] = value.strip().strip('"').strip("'")
+    return data
+
+
+def load_local_config() -> Dict[str, str]:
+    cfg: Dict[str, str] = {}
+    if CONFIG_PATH.exists():
+        try:
+            loaded = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                cfg.update({str(k): str(v) for k, v in loaded.items()})
+        except json.JSONDecodeError:
+            pass
+    cfg.update(parse_dotenv(ENV_PATH))
+    return cfg
+
+
+def resolve_api_key(cli_api_key: str) -> str:
+    if cli_api_key:
+        return cli_api_key
+    if os.getenv("GOOGLE_API_KEY"):
+        return os.getenv("GOOGLE_API_KEY", "")
+    local_cfg = load_local_config()
+    return local_cfg.get("GOOGLE_API_KEY", "")
+
+
+def resolve_model(cli_model: str) -> str:
+    if cli_model:
+        return cli_model
+    if os.getenv("GEMINI_MODEL"):
+        return os.getenv("GEMINI_MODEL", DEFAULT_MODEL)
+    local_cfg = load_local_config()
+    return local_cfg.get("GEMINI_MODEL", DEFAULT_MODEL)
 
 
 def analyze_pdf(path: Path) -> SourceAnalysis:
@@ -95,9 +139,6 @@ def call_gemini(api_key: str, model: str, parts: List[dict]) -> str:
 def extract_markdown_and_html_from_pdf(path: Path, api_key: str, model: str) -> tuple[str, str, SourceAnalysis]:
     analysis = analyze_pdf(path)
 
-    # Strategia adattiva:
-    # - digital: manda testo selezionabile + snapshot prima pagina per struttura
-    # - scanned/mixed: manda immagini di tutte le pagine (OCR vision)
     if analysis.kind == "pdf_digital":
         doc = fitz.open(path)
         full_text = "\n\n".join([p.get_text("text") for p in doc])
@@ -157,26 +198,34 @@ def save_outputs(input_path: Path, md: str, html: str, analysis: SourceAnalysis)
 def main() -> None:
     parser = argparse.ArgumentParser(description="OCR/estrazione adattiva verso Markdown + HTML.")
     parser.add_argument("input_file", help="PDF/JPG/JPEG/PNG")
-    parser.add_argument("--model", default=os.getenv("GEMINI_MODEL", DEFAULT_MODEL))
-    parser.add_argument("--api-key", default=os.getenv("GOOGLE_API_KEY", ""))
+    parser.add_argument("--model", default="")
+    parser.add_argument("--api-key", default="")
     args = parser.parse_args()
 
     input_path = Path(args.input_file).expanduser().resolve()
     if not input_path.exists():
         raise SystemExit(f"File non trovato: {input_path}")
-    if not args.api_key:
-        raise SystemExit("Imposta GOOGLE_API_KEY o passa --api-key.")
+
+    model = resolve_model(args.model)
+    api_key = resolve_api_key(args.api_key)
+
+    if not api_key:
+        raise SystemExit(
+            "API key mancante. Inseriscila in ocr_system/.env come GOOGLE_API_KEY=... "
+            "oppure usa --api-key."
+        )
 
     suffix = input_path.suffix.lower()
     if suffix == ".pdf":
-        md, html, analysis = extract_markdown_and_html_from_pdf(input_path, args.api_key, args.model)
+        md, html, analysis = extract_markdown_and_html_from_pdf(input_path, api_key, model)
     elif suffix in {".jpg", ".jpeg", ".png"}:
-        md, html, analysis = extract_markdown_and_html_from_image(input_path, args.api_key, args.model)
+        md, html, analysis = extract_markdown_and_html_from_image(input_path, api_key, model)
     else:
         raise SystemExit("Formato non supportato. Usa PDF/JPG/JPEG/PNG.")
 
     md_path, html_path = save_outputs(input_path, md, html, analysis)
     print(f"[OK] Strategia: {analysis.kind}")
+    print(f"[OK] Modello: {model}")
     print(f"[OK] Markdown: {md_path}")
     print(f"[OK] HTML: {html_path}")
 
