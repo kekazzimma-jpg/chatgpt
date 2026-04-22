@@ -11,18 +11,20 @@ Il sistema prende un documento (PDF immagine, PDF misto, scansione, JPG/PNG) e g
 
 1. **JSON strutturato** (`.ocr.json`) → base tecnica centrale del progetto.
 2. **Markdown** (`.md`) → facile da leggere e ottimo per LLM.
-3. **HTML** (`.html`) → versione leggibile web.
+3. **HTML** (`.html`) → versione strutturata da JSON con stili (allineamento, bold/italic inline, liste, tabelle).
 4. **DOCX** (`.docx`) → editabile in Word.
 5. **PDF ricercabile** (`.searchable.pdf`) → **obbligatorio**, sempre generato.
 
 Tutti i file finiscono nella cartella `OCR` accanto al file originale.
 
-Nota importante: per massima somiglianza all'originale, l'HTML ora usa rendering immagine delle pagine (layout praticamente identico al raster).
-
 
 ---
 
 ## 2) Cosa è cambiato nella rifattorizzazione
+
+L'HTML e il DOCX ora vengono costruiti dal JSON cercando di rispettare stili rilevati (grassetto/corsivo inline e centrature) invece di un semplice dump testo.
+
+
 
 Prima c'era un file unico molto carico.
 Ora l'architettura è separata e più chiara:

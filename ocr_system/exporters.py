@@ -1,20 +1,15 @@
 from __future__ import annotations
-
 import base64
 import json
 import os
 import shutil
 from pathlib import Path
 from typing import Any, Dict, List
-
 import fitz
-
-
+import html
 def export_json(document: Dict[str, Any], out_path: Path) -> Path:
     out_path.write_text(json.dumps(document, ensure_ascii=False, indent=2), encoding="utf-8")
     return out_path
-
-
 def _style_wrap_md(text: str, span: Dict[str, Any]) -> str:
     t = text
     if span.get("all_caps"):
@@ -26,8 +21,6 @@ def _style_wrap_md(text: str, span: Dict[str, Any]) -> str:
     if span.get("bold"):
         t = f"**{t}**"
     return t
-
-
 def _block_text_md(block: Dict[str, Any]) -> str:
     content = str(block.get("content", ""))
     spans = block.get("inline_spans", [])
@@ -39,14 +32,8 @@ def _block_text_md(block: Dict[str, Any]) -> str:
             return content
         return "".join(_style_wrap_md(str(s.get("text", "")), s) for s in spans)
     return content
-
-
-
-
 def _is_truncated_span_text(text: str) -> bool:
     return "..." in text or "…" in text
-
-
 def _fallback_list_items_from_content(content: str) -> List[str]:
     lines = [ln.strip() for ln in content.splitlines() if ln.strip()]
     out: List[str] = []
@@ -56,7 +43,27 @@ def _fallback_list_items_from_content(content: str) -> List[str]:
             ln2 = ln[2:].strip()
         out.append(ln2)
     return out
-
+def _render_inline_html(spans: List[Dict[str, Any]], fallback: str) -> str:
+    if not spans:
+        return html.escape(fallback)
+    out = []
+    for sp in spans:
+        txt = html.escape(str(sp.get("text", "")))
+        if sp.get("all_caps"):
+            txt = txt.upper()
+        if sp.get("underline"):
+            txt = f"<u>{txt}</u>"
+        if sp.get("italic"):
+            txt = f"<em>{txt}</em>"
+        if sp.get("bold"):
+            txt = f"<strong>{txt}</strong>"
+        out.append(txt)
+    return "".join(out) if out else html.escape(fallback)
+def _align_css(style: Dict[str, Any]) -> str:
+    align = str(style.get("alignment", "left")).lower()
+    if align not in {"left", "center", "right", "justify"}:
+        align = "left"
+    return f"text-align:{align};"
 def export_markdown(document: Dict[str, Any], out_path: Path, include_headers: bool = False, include_footers: bool = False) -> Path:
     lines: List[str] = []
     for page in document.get("pages", []):
@@ -107,12 +114,9 @@ def export_markdown(document: Dict[str, Any], out_path: Path, include_headers: b
             lines.append("")
     out_path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
     return out_path
-
-
 def export_html_faithful(input_path: Path, out_path: Path) -> Path:
     pages: List[str] = []
     suffix = input_path.suffix.lower()
-
     if suffix == ".pdf":
         doc = fitz.open(input_path)
         for i in range(len(doc)):
@@ -123,7 +127,6 @@ def export_html_faithful(input_path: Path, out_path: Path) -> Path:
         mime = "image/jpeg" if suffix in {".jpg", ".jpeg"} else "image/png"
         data = base64.b64encode(input_path.read_bytes()).decode("utf-8")
         pages.append(f"<section class='page'><img src='data:{mime};base64,{data}' alt='pagina 1'/></section>")
-
     html = """<html><head><meta charset='utf-8'><style>
     body{background:#eee;margin:0;padding:24px 0;}
     .page{max-width:980px;margin:0 auto 20px auto;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.18)}
@@ -131,8 +134,6 @@ def export_html_faithful(input_path: Path, out_path: Path) -> Path:
     </style></head><body>""" + "".join(pages) + "</body></html>"
     out_path.write_text(html, encoding="utf-8")
     return out_path
-
-
 def _find_tesseract_exe() -> str | None:
     direct = shutil.which("tesseract")
     if direct:
@@ -148,68 +149,66 @@ def _find_tesseract_exe() -> str | None:
         if Path(c).exists():
             return str(c)
     return None
-
 def export_html(document: Dict[str, Any], out_path: Path) -> Path:
-    html: List[str] = ["<html><head><meta charset='utf-8'><style>body{font-family:Times New Roman,serif;} .page{margin:24px auto;max-width:900px;padding:24px;border:1px solid #ddd;} .sig{margin-top:18px;} .note{color:#666;font-style:italic;}</style></head><body>"]
+    html_out: List[str] = ["<html><head><meta charset='utf-8'><style>body{font-family:Times New Roman,serif;} .page{margin:24px auto;max-width:900px;padding:24px;border:1px solid #ddd;} .sig{margin-top:18px;} .note{color:#666;font-style:italic;} p,li,h1,h2,h3{white-space:pre-wrap;}</style></head><body>"]
     for page in document.get("pages", []):
-        html.append("<section class='page'>")
-        html.append(f"<!-- Pagina {page.get('page_number')} -->")
+        html_out.append("<section class='page'>")
+        html_out.append(f"<!-- Pagina {page.get('page_number')} -->")
         for block in page.get("blocks", []):
             t = block.get("type", "paragraph")
-            content = block.get("content", "")
+            content = str(block.get("content", ""))
+            style = block.get("style", {}) if isinstance(block.get("style"), dict) else {}
+            inline = _render_inline_html(block.get("inline_spans", []) if isinstance(block.get("inline_spans"), list) else [], content)
+            css = _align_css(style)
             if t == "heading":
                 lvl = max(1, min(3, int(block.get("level", 2))))
-                html.append(f"<h{lvl}>{content}</h{lvl}>")
+                html_out.append(f"<h{lvl} style='{css}'>{inline}</h{lvl}>")
             elif t == "list":
                 items = block.get("items", []) if isinstance(block.get("items"), list) else []
                 if not items:
-                    items = [{"content": x} for x in _fallback_list_items_from_content(str(block.get("content", "")))]
+                    items = [{"content": x} for x in _fallback_list_items_from_content(content)]
                 tag = "ol" if block.get("list_type") == "ordered" else "ul"
-                html.append(f"<{tag}>")
+                html_out.append(f"<{tag} style='{css}'>")
                 for it in items:
-                    html.append(f"<li>{it.get('content','')}</li>")
-                html.append(f"</{tag}>")
+                    html_out.append(f"<li>{html.escape(str(it.get('content','')))}</li>")
+                html_out.append(f"</{tag}>")
             elif t == "table":
-                html.append("<table border='1' cellspacing='0' cellpadding='4'>")
+                html_out.append(f"<table border='1' cellspacing='0' cellpadding='4' style='{css}'>")
                 headers = block.get("headers", []) if isinstance(block.get("headers"), list) else []
                 if headers:
-                    html.append("<tr>" + "".join([f"<th>{h}</th>" for h in headers]) + "</tr>")
+                    html_out.append("<tr>" + "".join([f"<th>{html.escape(str(h))}</th>" for h in headers]) + "</tr>")
                 for r in block.get("rows", []) if isinstance(block.get("rows"), list) else []:
                     if isinstance(r, list):
-                        html.append("<tr>" + "".join([f"<td>{c}</td>" for c in r]) + "</tr>")
-                html.append("</table>")
+                        html_out.append("<tr>" + "".join([f"<td>{html.escape(str(c))}</td>" for c in r]) + "</tr>")
+                html_out.append("</table>")
             elif t == "signature_block":
-                html.append(f"<div class='sig'><hr/><p>{content}</p></div>")
+                html_out.append(f"<div class='sig' style='{css}'><hr/><p>{inline}</p></div>")
             elif t == "separator":
-                html.append("<hr/>")
+                html_out.append("<hr/>")
             elif t in {"image_placeholder", "stamp_or_seal"}:
-                html.append(f"<p class='note'>[{block.get('description') or content}]</p>")
+                html_out.append(f"<p class='note' style='{css}'>[{html.escape(str(block.get('description') or content))}]</p>")
             else:
-                html.append(f"<p>{content}</p>")
-        html.append("</section>")
-    html.append("</body></html>")
-    out_path.write_text("\n".join(html), encoding="utf-8")
+                html_out.append(f"<p style='{css}'>{inline}</p>")
+        html_out.append("</section>")
+    html_out.append("</body></html>")
+    out_path.write_text("\n".join(html_out), encoding="utf-8")
     return out_path
-
-
 def export_docx(document: Dict[str, Any], out_path: Path) -> Path:
     from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.shared import Pt
-
     doc = Document()
     section = doc.sections[0]
     section.top_margin = Pt(72)
     section.bottom_margin = Pt(72)
     section.left_margin = Pt(72)
     section.right_margin = Pt(72)
-
     def size_pt(sz: str) -> int:
         if sz == "small":
             return 9
         if sz == "large":
             return 14
         return 11
-
     for pidx, page in enumerate(document.get("pages", []), start=1):
         if pidx > 1:
             doc.add_page_break()
@@ -221,11 +220,18 @@ def export_docx(document: Dict[str, Any], out_path: Path) -> Path:
                 p = doc.add_heading(level=level)
             else:
                 p = doc.add_paragraph()
-
+            align = str(style.get("alignment", "left")).lower()
+            if align == "center":
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            elif align == "right":
+                p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            elif align == "justify":
+                p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+            else:
+                p.alignment = WD_ALIGN_PARAGRAPH.LEFT
             spans = block.get("inline_spans", []) if isinstance(block.get("inline_spans"), list) else []
             if not spans:
                 spans = [{"text": block.get("content", "")}]
-
             for sp in spans:
                 r = p.add_run(str(sp.get("text", "")))
                 r.bold = bool(sp.get("bold", False))
@@ -233,7 +239,6 @@ def export_docx(document: Dict[str, Any], out_path: Path) -> Path:
                 r.underline = bool(sp.get("underline", False))
                 r.font.name = "Times New Roman"
                 r.font.size = Pt(size_pt(style.get("font_size_relative", "normal")))
-
             if t == "list":
                 items = block.get("items", []) if isinstance(block.get("items"), list) else []
                 if not items:
@@ -254,30 +259,25 @@ def export_docx(document: Dict[str, Any], out_path: Path) -> Path:
                         cells = table.add_row().cells
                         for i, c in enumerate(row[:cols]):
                             cells[i].text = str(c)
-
     doc.save(out_path)
     return out_path
-
-
 def export_searchable_pdf(input_path: Path, out_path: Path) -> Path:
     import importlib.util
     import subprocess
     import sys
-
     if importlib.util.find_spec("ocrmypdf") is None:
         raise RuntimeError(
             "ocrmypdf non installato nell'ambiente corrente. "
             "Esegui setup_full_update.cmd o installa manualmente ocrmypdf + dipendenze sistema."
         )
-
     tess = _find_tesseract_exe()
     if not tess:
         raise RuntimeError("tesseract non trovato (né nel PATH né nei percorsi standard)")
-
     env = os.environ.copy()
     tess_dir = str(Path(tess).parent)
     env["PATH"] = tess_dir + os.pathsep + env.get("PATH", "")
-
+    if out_path.exists():
+        out_path.unlink()
     subprocess.check_call([
         sys.executable,
         "-m",
