@@ -1,0 +1,31 @@
+Windows Registry Editor Version 5.00
+
+; Adatta C:\OCR\convert.py al percorso reale.
+
+[HKEY_CLASSES_ROOT\SystemFileAssociations\.pdf\shell\OCR_to_MD_HTML]
+@="Converti in MD + HTML (OCR)"
+"Icon"="imageres.dll,-5302"
+
+[HKEY_CLASSES_ROOT\SystemFileAssociations\.pdf\shell\OCR_to_MD_HTML\command]
+@="cmd /c python \"C:\\OCR\\convert.py\" \"%1\""
+
+[HKEY_CLASSES_ROOT\SystemFileAssociations\.jpg\shell\OCR_to_MD_HTML]
+@="Converti in MD + HTML (OCR)"
+"Icon"="imageres.dll,-5302"
+
+[HKEY_CLASSES_ROOT\SystemFileAssociations\.jpg\shell\OCR_to_MD_HTML\command]
+@="cmd /c python \"C:\\OCR\\convert.py\" \"%1\""
+
+[HKEY_CLASSES_ROOT\SystemFileAssociations\.jpeg\shell\OCR_to_MD_HTML]
+@="Converti in MD + HTML (OCR)"
+"Icon"="imageres.dll,-5302"
+
+[HKEY_CLASSES_ROOT\SystemFileAssociations\.jpeg\shell\OCR_to_MD_HTML\command]
+@="cmd /c python \"C:\\OCR\\convert.py\" \"%1\""
+
+[HKEY_CLASSES_ROOT\SystemFileAssociations\.png\shell\OCR_to_MD_HTML]
+@="Converti in MD + HTML (OCR)"
+"Icon"="imageres.dll,-5302"
+
+[HKEY_CLASSES_ROOT\SystemFileAssociations\.png\shell\OCR_to_MD_HTML\command]
+@="cmd /c python \"C:\\OCR\\convert.py\" \"%1\""
