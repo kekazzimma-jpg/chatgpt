@@ -12,8 +12,8 @@ Gli output vengono salvati nella cartella `OCR` accanto al file sorgente.
 
 ## Fix importante sul tuo errore 404
 
-Dal log che hai incollato, il problema era il modello `gemini-3.1-flash-lite` (endpoint non trovato).  
-Ora il sistema usa di default `gemini-2.5-flash-lite` e, se il modello richiesto non esiste per la tua key, prova fallback automatici compatibili.
+Dal log che hai incollato, il problema era l'ID modello inviato all'endpoint.  
+Ora il sistema resta su `gemini-3.1-flash-lite` (come richiesto) e, se l'ID esatto non viene risolto, prova solo a trovare la corrispondenza ufficiale dello stesso modello nella lista modelli disponibile con la tua API key, senza passare ad altri modelli.
 
 ## Installazione consigliata (NO PowerShell policy issues)
 
@@ -73,7 +73,7 @@ Esempio:
 
 ```env
 GOOGLE_API_KEY=la_tua_chiave
-GEMINI_MODEL=gemini-2.5-flash-lite
+GEMINI_MODEL=gemini-3.1-flash-lite
 ```
 
 Priorità lettura configurazione:

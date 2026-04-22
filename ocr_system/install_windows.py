@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-MODEL_DEFAULT = "gemini-2.5-flash-lite"
+MODEL_DEFAULT = "gemini-3.1-flash-lite"
 EXTENSIONS = [".pdf", ".jpg", ".jpeg", ".png"]
 
 

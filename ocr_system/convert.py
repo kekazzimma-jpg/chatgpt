@@ -3,7 +3,7 @@
 Pipeline OCR/adaptive extraction:
 - Input: PDF (scanned, digital, mixed) or JPG/JPEG/PNG.
 - Output: Markdown + HTML in ./OCR folder near source file.
-- LLM backend: Gemini model (default: gemini-3.1-flash-lite) via Google AI Studio API key.
+- LLM backend: Gemini model via Google AI Studio API key.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ import json
 import logging
 import mimetypes
 import os
+import re
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,8 +24,7 @@ import fitz  # PyMuPDF
 import requests
 
 GOOGLE_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
-DEFAULT_MODEL = "gemini-2.5-flash-lite"
-FALLBACK_MODELS = ["gemini-2.5-flash-lite", "gemini-2.0-flash-lite"]
+DEFAULT_MODEL = "gemini-3.1-flash-lite"
 BASE_DIR = Path(__file__).resolve().parent
 ENV_PATH = BASE_DIR / ".env"
 CONFIG_PATH = BASE_DIR / "config.json"
@@ -104,22 +104,47 @@ def model_exists(api_key: str, model: str) -> bool:
     return r.status_code == 200
 
 
-def resolve_working_model(api_key: str, requested_model: str) -> str:
-    candidates = [normalize_model_name(requested_model)]
-    for fallback in FALLBACK_MODELS:
-        f = normalize_model_name(fallback)
-        if f not in candidates:
-            candidates.append(f)
+def list_models(api_key: str) -> List[str]:
+    url = f"{GOOGLE_API_BASE}?key={api_key}"
+    r = requests.get(url, timeout=60)
+    r.raise_for_status()
+    data = r.json()
+    models = []
+    for item in data.get("models", []):
+        name = item.get("name", "")
+        if name.startswith("models/"):
+            models.append(name.replace("models/", ""))
+    return models
 
-    for m in candidates:
-        if model_exists(api_key, m):
-            if m != normalize_model_name(requested_model):
-                logging.warning("Modello '%s' non disponibile, uso fallback '%s'.", requested_model, m)
-            return m
 
+def tokenize_model_hint(hint: str) -> List[str]:
+    normalized = hint.lower().replace("_", "-").replace(" ", "-")
+    tokens = [t for t in re.split(r"[^a-z0-9]+", normalized) if t]
+    return tokens
+
+
+def resolve_requested_model_id(api_key: str, requested_model: str) -> str:
+    requested = normalize_model_name(requested_model)
+    if model_exists(api_key, requested):
+        return requested
+
+    available = list_models(api_key)
+    wanted_tokens = tokenize_model_hint(requested)
+    matches = []
+    for m in available:
+        lower = m.lower()
+        if all(tok in lower for tok in wanted_tokens):
+            matches.append(m)
+
+    if len(matches) == 1:
+        logging.warning("Model id esatto non trovato, uso corrispondenza AI Studio: %s", matches[0])
+        return matches[0]
+
+    shortlist = [m for m in available if "flash" in m and "lite" in m][:10]
     raise SystemExit(
-        "Nessun modello disponibile con questa API key. Verifica AI Studio o cambia GEMINI_MODEL. "
-        f"Tentati: {', '.join(candidates)}"
+        "Modello richiesto non trovato: "
+        f"'{requested_model}'. Nessun fallback automatico applicato. "
+        f"Modelli simili disponibili: {', '.join(shortlist)}"
     )
 
 
@@ -275,7 +300,7 @@ def main() -> None:
                 "oppure usa --api-key."
             )
 
-        model = resolve_working_model(api_key, requested_model)
+        model = resolve_requested_model_id(api_key, requested_model)
         log_step(f"Modello richiesto: {requested_model}")
         log_step(f"Modello attivo: {model}")
         suffix = input_path.suffix.lower()
