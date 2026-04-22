@@ -1,31 +1,39 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import os
 import subprocess
 import sys
 from pathlib import Path
 
-MODEL_DEFAULT = "gemini-3.1-flash-lite"
+MODEL_DEFAULT = "gemini-2.5-flash-lite"
 EXTENSIONS = [".pdf", ".jpg", ".jpeg", ".png"]
 
 
-def ensure_venv(base_dir: Path) -> Path:
+def ensure_venv(base_dir: Path, full_install: bool) -> Path:
     venv_dir = base_dir / ".venv"
     python_exe = venv_dir / "Scripts" / "python.exe"
 
     if not python_exe.exists():
         subprocess.check_call([sys.executable, "-m", "venv", str(venv_dir)])
+        full_install = True
 
-    subprocess.check_call([str(python_exe), "-m", "pip", "install", "--upgrade", "pip"])
-    subprocess.check_call([str(python_exe), "-m", "pip", "install", "-r", str(base_dir / "requirements.txt")])
+    if full_install:
+        subprocess.check_call([str(python_exe), "-m", "pip", "install", "--upgrade", "pip"])
+        subprocess.check_call([str(python_exe), "-m", "pip", "install", "-r", str(base_dir / "requirements.txt")])
+    else:
+        print("Install dipendenze saltata (modalità rapida). Usa --full per reinstallare/aggiornare.")
+
     return python_exe
 
 
-def save_env(base_dir: Path, model: str) -> None:
+def save_env(base_dir: Path, model: str, force_api_prompt: bool) -> None:
     env_path = base_dir / ".env"
     existing = env_path.read_text(encoding="utf-8") if env_path.exists() else ""
-    if "GOOGLE_API_KEY=" in existing:
+    has_key = "GOOGLE_API_KEY=" in existing
+
+    if has_key and not force_api_prompt:
         print("GOOGLE_API_KEY già presente in .env (nessuna modifica).")
         return
 
@@ -65,16 +73,25 @@ def register_context_menu(base_dir: Path) -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Installer OCR Windows")
+    parser.add_argument("--model", default=MODEL_DEFAULT)
+    parser.add_argument("--full", action="store_true", help="Reinstalla/aggiorna dipendenze")
+    parser.add_argument("--register-only", action="store_true", help="Aggiorna solo menu contestuale")
+    parser.add_argument("--force-api", action="store_true", help="Richiedi nuovamente la API key")
+    args = parser.parse_args()
+
     base_dir = Path(__file__).resolve().parent
-    model = MODEL_DEFAULT
-    if len(sys.argv) > 1 and sys.argv[1].strip():
-        model = sys.argv[1].strip()
+
+    if args.register_only:
+        register_context_menu(base_dir)
+        print("Aggiornamento menu completato.")
+        return
 
     print("[1/3] Setup venv + dipendenze...")
-    ensure_venv(base_dir)
+    ensure_venv(base_dir, full_install=args.full)
 
     print("[2/3] Configuro API key locale...")
-    save_env(base_dir, model)
+    save_env(base_dir, args.model, force_api_prompt=args.force_api)
 
     print("[3/3] Registro menu contestuale...")
     register_context_menu(base_dir)

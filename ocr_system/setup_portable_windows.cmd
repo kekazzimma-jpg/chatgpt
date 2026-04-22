@@ -10,6 +10,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
+REM Setup rapido: non reinstalla dipendenze se .venv esiste.
 %PY_EXE% -3 "%SCRIPT_DIR%install_windows.py"
 if errorlevel 1 (
   echo Setup fallito.

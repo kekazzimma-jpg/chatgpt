@@ -23,7 +23,8 @@ import fitz  # PyMuPDF
 import requests
 
 GOOGLE_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
-DEFAULT_MODEL = "gemini-3.1-flash-lite"
+DEFAULT_MODEL = "gemini-2.5-flash-lite"
+FALLBACK_MODELS = ["gemini-2.5-flash-lite", "gemini-2.0-flash-lite"]
 BASE_DIR = Path(__file__).resolve().parent
 ENV_PATH = BASE_DIR / ".env"
 CONFIG_PATH = BASE_DIR / "config.json"
@@ -90,6 +91,36 @@ def resolve_model(cli_model: str) -> str:
         return os.getenv("GEMINI_MODEL", DEFAULT_MODEL)
     local_cfg = load_local_config()
     return local_cfg.get("GEMINI_MODEL", DEFAULT_MODEL)
+
+
+def normalize_model_name(model: str) -> str:
+    return model.replace("models/", "").strip()
+
+
+def model_exists(api_key: str, model: str) -> bool:
+    m = normalize_model_name(model)
+    url = f"{GOOGLE_API_BASE}/{m}?key={api_key}"
+    r = requests.get(url, timeout=60)
+    return r.status_code == 200
+
+
+def resolve_working_model(api_key: str, requested_model: str) -> str:
+    candidates = [normalize_model_name(requested_model)]
+    for fallback in FALLBACK_MODELS:
+        f = normalize_model_name(fallback)
+        if f not in candidates:
+            candidates.append(f)
+
+    for m in candidates:
+        if model_exists(api_key, m):
+            if m != normalize_model_name(requested_model):
+                logging.warning("Modello '%s' non disponibile, uso fallback '%s'.", requested_model, m)
+            return m
+
+    raise SystemExit(
+        "Nessun modello disponibile con questa API key. Verifica AI Studio o cambia GEMINI_MODEL. "
+        f"Tentati: {', '.join(candidates)}"
+    )
 
 
 def analyze_pdf(path: Path) -> SourceAnalysis:
@@ -235,7 +266,7 @@ def main() -> None:
     log_step(f"Input: {input_path}")
 
     try:
-        model = resolve_model(args.model)
+        requested_model = resolve_model(args.model)
         api_key = resolve_api_key(args.api_key)
 
         if not api_key:
@@ -244,7 +275,9 @@ def main() -> None:
                 "oppure usa --api-key."
             )
 
-        log_step(f"Modello: {model}")
+        model = resolve_working_model(api_key, requested_model)
+        log_step(f"Modello richiesto: {requested_model}")
+        log_step(f"Modello attivo: {model}")
         suffix = input_path.suffix.lower()
         log_step(f"Rilevato formato: {suffix}")
 
