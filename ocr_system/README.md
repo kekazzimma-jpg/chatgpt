@@ -105,3 +105,11 @@ In caso di errore, la finestra resta aperta e mostra il percorso del log.
 - `setup_portable_windows.ps1`: alternativa PowerShell
 - `.env.example`: template API
 - `requirements.txt`: dipendenze Python
+
+
+## Migliorie HTML (fedeltà impaginazione)
+
+- L'HTML ora viene generato **pagina per pagina** (non più in un unico blocco), riducendo il rischio che si fermi alla prima pagina.
+- Gli output vengono sanitizzati per rimuovere eventuali prefissi tipo ```html / ```.
+- Per ogni pagina si usa un contenitore con dimensioni originali PDF (pt), così margini/rientri/indentazioni risultano più leggibili.
+- Prompt HTML rafforzato per preservare corsivi, allineamenti, elenchi puntati e spaziature.
