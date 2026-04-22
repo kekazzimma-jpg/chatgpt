@@ -17,6 +17,9 @@ Il sistema prende un documento (PDF immagine, PDF misto, scansione, JPG/PNG) e g
 
 Tutti i file finiscono nella cartella `OCR` accanto al file originale.
 
+Nota importante: per massima somiglianza all'originale, l'HTML ora usa rendering immagine delle pagine (layout praticamente identico al raster).
+
+
 ---
 
 ## 2) Cosa è cambiato nella rifattorizzazione

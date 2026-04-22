@@ -44,3 +44,8 @@
 
 12. Ghostscript non sempre disponibile su Windows
    - Soluzione: reso opzionale in setup; export PDF ricercabile configurato con `--output-type pdf` per ridurre dipendenza da Ghostscript.
+
+13. HTML non abbastanza fedele al raster
+   - Soluzione: exporter HTML in modalità fedele, basato su immagini pagina-per-pagina per mantenere layout quasi identico all'originale.
+14. Tesseract installato ma non nel PATH attivo
+   - Soluzione: ricerca in percorsi standard e iniezione PATH runtime per il processo ocrmypdf.

@@ -7,7 +7,7 @@ import traceback
 from pathlib import Path
 from typing import Dict, List
 
-from exporters import export_docx, export_html, export_json, export_markdown, export_searchable_pdf
+from exporters import export_docx, export_html_faithful, export_json, export_markdown, export_searchable_pdf
 from ocr_core import ocr_to_document, resolve_api_key, resolve_model, resolve_requested_model_id
 
 
@@ -81,7 +81,7 @@ def genera_output(file_originale: str, output_dir: str | None = None, formati: L
     if "md" in active_formats:
         safe_export("md", lambda: export_markdown(document, out_dir / f"{input_path.stem}.md"))
     if "html" in active_formats:
-        safe_export("html", lambda: export_html(document, out_dir / f"{input_path.stem}.html"))
+        safe_export("html", lambda: export_html_faithful(input_path, out_dir / f"{input_path.stem}.html"))
     if "docx" in active_formats:
         safe_export("docx", lambda: export_docx(document, out_dir / f"{input_path.stem}.docx"))
     # PDF ricercabile: obbligatorio

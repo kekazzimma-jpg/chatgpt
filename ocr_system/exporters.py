@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import base64
 import json
+import os
+import shutil
 from pathlib import Path
 from typing import Any, Dict, List
+
+import fitz
 
 
 def export_json(document: Dict[str, Any], out_path: Path) -> Path:
@@ -103,6 +108,46 @@ def export_markdown(document: Dict[str, Any], out_path: Path, include_headers: b
     out_path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
     return out_path
 
+
+def export_html_faithful(input_path: Path, out_path: Path) -> Path:
+    pages: List[str] = []
+    suffix = input_path.suffix.lower()
+
+    if suffix == ".pdf":
+        doc = fitz.open(input_path)
+        for i in range(len(doc)):
+            pix = doc[i].get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+            data = base64.b64encode(pix.tobytes("png")).decode("utf-8")
+            pages.append(f"<section class='page'><img src='data:image/png;base64,{data}' alt='pagina {i+1}'/></section>")
+    else:
+        mime = "image/jpeg" if suffix in {".jpg", ".jpeg"} else "image/png"
+        data = base64.b64encode(input_path.read_bytes()).decode("utf-8")
+        pages.append(f"<section class='page'><img src='data:{mime};base64,{data}' alt='pagina 1'/></section>")
+
+    html = """<html><head><meta charset='utf-8'><style>
+    body{background:#eee;margin:0;padding:24px 0;}
+    .page{max-width:980px;margin:0 auto 20px auto;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.18)}
+    .page img{width:100%;height:auto;display:block}
+    </style></head><body>""" + "".join(pages) + "</body></html>"
+    out_path.write_text(html, encoding="utf-8")
+    return out_path
+
+
+def _find_tesseract_exe() -> str | None:
+    direct = shutil.which("tesseract")
+    if direct:
+        return direct
+    candidates = [
+        Path(r"C:\Program Files\Tesseract-OCR\tesseract.exe"),
+        Path(r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe"),
+    ]
+    local = Path(os.environ.get("LOCALAPPDATA", ""))
+    if local:
+        candidates.extend(local.glob("**/Tesseract-OCR/tesseract.exe"))
+    for c in candidates:
+        if Path(c).exists():
+            return str(c)
+    return None
 
 def export_html(document: Dict[str, Any], out_path: Path) -> Path:
     html: List[str] = ["<html><head><meta charset='utf-8'><style>body{font-family:Times New Roman,serif;} .page{margin:24px auto;max-width:900px;padding:24px;border:1px solid #ddd;} .sig{margin-top:18px;} .note{color:#666;font-style:italic;}</style></head><body>"]
@@ -216,7 +261,6 @@ def export_docx(document: Dict[str, Any], out_path: Path) -> Path:
 
 def export_searchable_pdf(input_path: Path, out_path: Path) -> Path:
     import importlib.util
-    import shutil
     import subprocess
     import sys
 
@@ -226,8 +270,14 @@ def export_searchable_pdf(input_path: Path, out_path: Path) -> Path:
             "Esegui setup_full_update.cmd o installa manualmente ocrmypdf + dipendenze sistema."
         )
 
-    if shutil.which("tesseract") is None:
-        raise RuntimeError("tesseract non trovato nel PATH")
+    tess = _find_tesseract_exe()
+    if not tess:
+        raise RuntimeError("tesseract non trovato (né nel PATH né nei percorsi standard)")
+
+    env = os.environ.copy()
+    tess_dir = str(Path(tess).parent)
+    env["PATH"] = tess_dir + os.pathsep + env.get("PATH", "")
+
     subprocess.check_call([
         sys.executable,
         "-m",
@@ -237,5 +287,5 @@ def export_searchable_pdf(input_path: Path, out_path: Path) -> Path:
         "--skip-text",
         "--output-type",
         "pdf",
-    ])
+    ], env=env)
     return out_path
