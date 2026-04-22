@@ -48,7 +48,7 @@ Apri `cmd.exe` nella cartella `ocr_system` e lancia:
 setup_portable_windows.cmd
 ```
 
-Il setup ora prova automaticamente a installare dipendenze di sistema OCR (Tesseract e Ghostscript obbligatorie; QPDF opzionale) via `winget` o `choco` quando mancanti.
+Il setup ora prova automaticamente a installare dipendenze di sistema OCR (Tesseract obbligatorio; Ghostscript e QPDF opzionali) via `winget` o `choco` quando mancanti.
 Se non vuoi questo comportamento: `python install_windows.py --no-auto-system`.
 
 ### Installazione completa/forzata (quando serve)
@@ -227,13 +227,13 @@ Quindi: "quasi perfetto" è realistico sui digitali/misti, meno garantibile sui 
 
 ## 16) Requisito Tesseract per PDF ricercabile
 
-Il PDF ricercabile usa `ocrmypdf`, che richiede `tesseract` installato nel PATH.
+Il PDF ricercabile usa `ocrmypdf`, che richiede `tesseract` installato nel PATH. Ghostscript è opzionale perché l'export usa output PDF standard (non PDF/A).
 Se manca, la conversione viene fermata con messaggio chiaro.
 
 Installazione rapida (Windows):
 - `winget install UB-Mannheim.TesseractOCR`
 - oppure `choco install tesseract`
 
-Per Ghostscript:
+Per Ghostscript (opzionale ma consigliato):
 - `winget install ArtifexSoftware.Ghostscript`
 - oppure `choco install ghostscript`

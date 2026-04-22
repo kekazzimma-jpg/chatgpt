@@ -41,3 +41,6 @@
 
 11. Winget non trova alcuni package ID
    - Soluzione: introdotta lista di ID alternativi e distinzione dipendenze obbligatorie (tesseract/ghostscript) vs opzionali (qpdf).
+
+12. Ghostscript non sempre disponibile su Windows
+   - Soluzione: reso opzionale in setup; export PDF ricercabile configurato con `--output-type pdf` per ridurre dipendenza da Ghostscript.

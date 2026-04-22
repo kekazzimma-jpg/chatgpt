@@ -87,7 +87,7 @@ def ensure_system_dependencies(auto_install: bool = True) -> None:
         "gswin64c": {
             "winget": ["ArtifexSoftware.Ghostscript", "ArtifexSoftware.GhostScript"],
             "choco": "ghostscript",
-            "mandatory": True,
+            "mandatory": False,
         },
         "qpdf": {
             "winget": ["qpdf.qpdf"],
@@ -98,7 +98,7 @@ def ensure_system_dependencies(auto_install: bool = True) -> None:
 
     missing = [exe for exe in required if shutil.which(exe) is None]
     if not missing:
-        print("Dipendenze sistema OCR trovate (tesseract/ghostscript/qpdf).")
+        print("Dipendenze sistema OCR trovate (tesseract; ghostscript/qpdf opzionali).")
         return
 
     if auto_install:
@@ -183,7 +183,7 @@ def main() -> None:
     print("[1/3] Setup venv + dipendenze Python...")
     ensure_venv(base_dir, full_install=args.full)
 
-    print("[2/3] Verifica dipendenze sistema OCR (tesseract/ghostscript/qpdf)...")
+    print("[2/3] Verifica dipendenze sistema OCR (tesseract obbligatorio; ghostscript/qpdf opzionali)...")
     ensure_system_dependencies(auto_install=not args.no_auto_system)
 
     print("[3/4] Configuro API key locale...")
