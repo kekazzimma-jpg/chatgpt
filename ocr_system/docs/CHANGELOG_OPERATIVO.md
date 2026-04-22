@@ -35,3 +35,6 @@
    - Soluzione: percorso ibrido per PDF pagina-per-pagina: estrazione locale da testo selezionabile quando disponibile, Gemini vision per pagine raster.
 9. Errore `tesseract` mancante nel PATH
    - Soluzione: verifica esplicita in setup con messaggio di installazione guidata.
+
+10. Setup dipendenze sistema automatico
+   - Soluzione: installer ora tenta installazione automatica di tesseract/ghostscript/qpdf via winget/choco.

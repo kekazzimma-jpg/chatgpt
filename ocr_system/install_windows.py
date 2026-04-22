@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
-import shutil
 from pathlib import Path
 
 MODEL_DEFAULT = "gemini-3.1-flash-lite"
@@ -24,15 +24,93 @@ def ensure_venv(base_dir: Path, full_install: bool) -> Path:
         subprocess.check_call([str(python_exe), "-m", "pip", "install", "--upgrade", "pip"])
         subprocess.check_call([str(python_exe), "-m", "pip", "install", "-r", str(base_dir / "requirements.txt")])
     else:
-        # modalità rapida ma con verifica minima dipendenze obbligatorie
         check = subprocess.run([str(python_exe), "-c", "import fitz,requests,docx,ocrmypdf"], capture_output=True, text=True)
         if check.returncode != 0:
-            print("Dipendenze mancanti rilevate, installo requirements...")
+            print("Dipendenze Python mancanti rilevate, installo requirements...")
             subprocess.check_call([str(python_exe), "-m", "pip", "install", "-r", str(base_dir / "requirements.txt")])
         else:
-            print("Install dipendenze saltata (modalità rapida): requisiti già presenti.")
+            print("Install dipendenze Python saltata (modalità rapida): requisiti già presenti.")
 
     return python_exe
+
+
+def _try_install_with_winget(package_id: str) -> bool:
+    if shutil.which("winget") is None:
+        return False
+    cmd = [
+        "winget",
+        "install",
+        "--id",
+        package_id,
+        "-e",
+        "--accept-package-agreements",
+        "--accept-source-agreements",
+    ]
+    return subprocess.run(cmd).returncode == 0
+
+
+def _try_install_with_choco(package_name: str) -> bool:
+    if shutil.which("choco") is None:
+        return False
+    return subprocess.run(["choco", "install", package_name, "-y"]).returncode == 0
+
+
+def _append_common_paths() -> None:
+    candidates = [
+        r"C:\Program Files\Tesseract-OCR",
+        r"C:\Program Files\qpdf\bin",
+    ]
+    gs_root = Path(r"C:\Program Files\gs")
+    if gs_root.exists():
+        for p in gs_root.glob("*\\bin"):
+            candidates.append(str(p))
+
+    cur = os.environ.get("PATH", "")
+    for c in candidates:
+        if Path(c).exists() and c.lower() not in cur.lower():
+            cur = c + os.pathsep + cur
+    os.environ["PATH"] = cur
+
+
+def ensure_system_dependencies(auto_install: bool = True) -> None:
+    _append_common_paths()
+
+    required = {
+        "tesseract": {
+            "winget": "UB-Mannheim.TesseractOCR",
+            "choco": "tesseract",
+        },
+        "gswin64c": {
+            "winget": "ArtifexSoftware.GhostScript",
+            "choco": "ghostscript",
+        },
+        "qpdf": {
+            "winget": "qpdf.qpdf",
+            "choco": "qpdf",
+        },
+    }
+
+    missing = [exe for exe in required if shutil.which(exe) is None]
+    if not missing:
+        print("Dipendenze sistema OCR trovate (tesseract/ghostscript/qpdf).")
+        return
+
+    if auto_install:
+        print(f"Dipendenze sistema mancanti: {', '.join(missing)}. Provo installazione automatica...")
+        for exe in list(missing):
+            spec = required[exe]
+            ok = _try_install_with_winget(spec["winget"]) or _try_install_with_choco(spec["choco"])
+            if ok:
+                print(f"Installato: {exe}")
+        _append_common_paths()
+
+    missing_after = [exe for exe in required if shutil.which(exe) is None]
+    if missing_after:
+        raise SystemExit(
+            "Dipendenze sistema mancanti anche dopo tentativo automatico: "
+            + ", ".join(missing_after)
+            + ". Installa manualmente e riavvia il terminale."
+        )
 
 
 def save_env(base_dir: Path, model: str, force_api_prompt: bool) -> None:
@@ -48,10 +126,7 @@ def save_env(base_dir: Path, model: str, force_api_prompt: bool) -> None:
     if not api_key:
         raise SystemExit("API key vuota: setup interrotto.")
 
-    env_path.write_text(
-        f"GOOGLE_API_KEY={api_key}\nGEMINI_MODEL={model}\n",
-        encoding="utf-8",
-    )
+    env_path.write_text(f"GOOGLE_API_KEY={api_key}\nGEMINI_MODEL={model}\n", encoding="utf-8")
     print(f"Salvato: {env_path}")
 
 
@@ -79,22 +154,13 @@ def register_context_menu(base_dir: Path) -> None:
     print("Menu contestuale registrato per .pdf/.jpg/.jpeg/.png (utente corrente).")
 
 
-def ensure_tesseract() -> None:
-    if shutil.which("tesseract"):
-        print("Tesseract trovato nel PATH.")
-        return
-    raise SystemExit(
-        "Tesseract non trovato nel PATH. Installa Tesseract OCR (es. `winget install UB-Mannheim.TesseractOCR` "
-        "oppure `choco install tesseract`) e poi riavvia il terminale."
-    )
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="Installer OCR Windows")
     parser.add_argument("--model", default=MODEL_DEFAULT)
     parser.add_argument("--full", action="store_true", help="Reinstalla/aggiorna dipendenze")
     parser.add_argument("--register-only", action="store_true", help="Aggiorna solo menu contestuale")
     parser.add_argument("--force-api", action="store_true", help="Richiedi nuovamente la API key")
+    parser.add_argument("--no-auto-system", action="store_true", help="Non tentare installazione automatica dipendenze sistema")
     args = parser.parse_args()
 
     base_dir = Path(__file__).resolve().parent
@@ -104,15 +170,16 @@ def main() -> None:
         print("Aggiornamento menu completato.")
         return
 
-    print("[1/3] Setup venv + dipendenze...")
+    print("[1/3] Setup venv + dipendenze Python...")
     ensure_venv(base_dir, full_install=args.full)
 
-    ensure_tesseract()
+    print("[2/3] Verifica dipendenze sistema OCR (tesseract/ghostscript/qpdf)...")
+    ensure_system_dependencies(auto_install=not args.no_auto_system)
 
-    print("[2/3] Configuro API key locale...")
+    print("[3/4] Configuro API key locale...")
     save_env(base_dir, args.model, force_api_prompt=args.force_api)
 
-    print("[3/3] Registro menu contestuale...")
+    print("[4/4] Registro menu contestuale...")
     register_context_menu(base_dir)
 
     print("Setup completato. Usa click destro: Converti in MD + HTML (OCR).")

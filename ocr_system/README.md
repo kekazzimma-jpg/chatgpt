@@ -48,6 +48,9 @@ Apri `cmd.exe` nella cartella `ocr_system` e lancia:
 setup_portable_windows.cmd
 ```
 
+Il setup ora prova automaticamente a installare anche dipendenze di sistema OCR (Tesseract, Ghostscript, QPDF) via `winget` o `choco` quando mancanti.
+Se non vuoi questo comportamento: `python install_windows.py --no-auto-system`.
+
 ### Installazione completa/forzata (quando serve)
 
 ```bat
