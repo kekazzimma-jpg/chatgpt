@@ -68,3 +68,11 @@ Priorità lettura configurazione:
 - `setup_portable_windows.ps1`: alternativa PowerShell
 - `.env.example`: template API
 - `requirements.txt`: dipendenze Python
+
+## Debug e log (se non succede nulla)
+
+Se la finestra si chiude troppo in fretta o la conversione fallisce:
+- il launcher ora crea sempre `OCR/ocr_run.log` vicino al file input;
+- il motore salva anche `OCR/ocr_debug.log` con dettagli interni/traceback.
+
+In caso di errore, la finestra **resta aperta** e mostra il percorso del log.

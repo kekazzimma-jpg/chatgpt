@@ -11,8 +11,10 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import logging
 import mimetypes
 import os
+import traceback
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List
@@ -195,6 +197,29 @@ def save_outputs(input_path: Path, md: str, html: str, analysis: SourceAnalysis)
     return md_path, html_path
 
 
+def setup_logger(input_path: Path) -> Path:
+    out_dir = input_path.parent / "OCR"
+    out_dir.mkdir(exist_ok=True)
+    log_path = out_dir / "ocr_debug.log"
+
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+    logger.handlers.clear()
+
+    fh = logging.FileHandler(log_path, encoding="utf-8")
+    fh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+    logger.addHandler(fh)
+
+    sh = logging.StreamHandler()
+    sh.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
+    logger.addHandler(sh)
+    return log_path
+
+
+def log_step(message: str) -> None:
+    logging.info(message)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="OCR/estrazione adattiva verso Markdown + HTML.")
     parser.add_argument("input_file", help="PDF/JPG/JPEG/PNG")
@@ -206,28 +231,44 @@ def main() -> None:
     if not input_path.exists():
         raise SystemExit(f"File non trovato: {input_path}")
 
-    model = resolve_model(args.model)
-    api_key = resolve_api_key(args.api_key)
+    log_path = setup_logger(input_path)
+    log_step(f"Input: {input_path}")
 
-    if not api_key:
-        raise SystemExit(
-            "API key mancante. Inseriscila in ocr_system/.env come GOOGLE_API_KEY=... "
-            "oppure usa --api-key."
-        )
+    try:
+        model = resolve_model(args.model)
+        api_key = resolve_api_key(args.api_key)
 
-    suffix = input_path.suffix.lower()
-    if suffix == ".pdf":
-        md, html, analysis = extract_markdown_and_html_from_pdf(input_path, api_key, model)
-    elif suffix in {".jpg", ".jpeg", ".png"}:
-        md, html, analysis = extract_markdown_and_html_from_image(input_path, api_key, model)
-    else:
-        raise SystemExit("Formato non supportato. Usa PDF/JPG/JPEG/PNG.")
+        if not api_key:
+            raise SystemExit(
+                "API key mancante. Inseriscila in ocr_system/.env come GOOGLE_API_KEY=... "
+                "oppure usa --api-key."
+            )
 
-    md_path, html_path = save_outputs(input_path, md, html, analysis)
-    print(f"[OK] Strategia: {analysis.kind}")
-    print(f"[OK] Modello: {model}")
-    print(f"[OK] Markdown: {md_path}")
-    print(f"[OK] HTML: {html_path}")
+        log_step(f"Modello: {model}")
+        suffix = input_path.suffix.lower()
+        log_step(f"Rilevato formato: {suffix}")
+
+        if suffix == ".pdf":
+            log_step("Avvio estrazione PDF...")
+            md, html, analysis = extract_markdown_and_html_from_pdf(input_path, api_key, model)
+        elif suffix in {".jpg", ".jpeg", ".png"}:
+            log_step("Avvio estrazione immagine...")
+            md, html, analysis = extract_markdown_and_html_from_image(input_path, api_key, model)
+        else:
+            raise SystemExit("Formato non supportato. Usa PDF/JPG/JPEG/PNG.")
+
+        md_path, html_path = save_outputs(input_path, md, html, analysis)
+        log_step(f"Completato con strategia: {analysis.kind}")
+        print(f"[OK] Strategia: {analysis.kind}")
+        print(f"[OK] Modello: {model}")
+        print(f"[OK] Markdown: {md_path}")
+        print(f"[OK] HTML: {html_path}")
+        print(f"[OK] Log: {log_path}")
+    except Exception as exc:
+        logging.error("Errore durante conversione: %s", exc)
+        logging.error(traceback.format_exc())
+        print(f"[ERRORE] Conversione fallita. Vedi log: {log_path}")
+        raise
 
 
 if __name__ == "__main__":
