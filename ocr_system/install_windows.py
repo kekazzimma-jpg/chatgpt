@@ -34,19 +34,22 @@ def ensure_venv(base_dir: Path, full_install: bool) -> Path:
     return python_exe
 
 
-def _try_install_with_winget(package_id: str) -> bool:
+def _try_install_with_winget(package_ids: list[str]) -> bool:
     if shutil.which("winget") is None:
         return False
-    cmd = [
-        "winget",
-        "install",
-        "--id",
-        package_id,
-        "-e",
-        "--accept-package-agreements",
-        "--accept-source-agreements",
-    ]
-    return subprocess.run(cmd).returncode == 0
+    for package_id in package_ids:
+        cmd = [
+            "winget",
+            "install",
+            "--id",
+            package_id,
+            "-e",
+            "--accept-package-agreements",
+            "--accept-source-agreements",
+        ]
+        if subprocess.run(cmd).returncode == 0:
+            return True
+    return False
 
 
 def _try_install_with_choco(package_name: str) -> bool:
@@ -77,16 +80,19 @@ def ensure_system_dependencies(auto_install: bool = True) -> None:
 
     required = {
         "tesseract": {
-            "winget": "UB-Mannheim.TesseractOCR",
+            "winget": ["UB-Mannheim.TesseractOCR", "Tesseract-OCR.Tesseract"],
             "choco": "tesseract",
+            "mandatory": True,
         },
         "gswin64c": {
-            "winget": "ArtifexSoftware.GhostScript",
+            "winget": ["ArtifexSoftware.Ghostscript", "ArtifexSoftware.GhostScript"],
             "choco": "ghostscript",
+            "mandatory": True,
         },
         "qpdf": {
-            "winget": "qpdf.qpdf",
+            "winget": ["qpdf.qpdf"],
             "choco": "qpdf",
+            "mandatory": False,
         },
     }
 
@@ -105,10 +111,14 @@ def ensure_system_dependencies(auto_install: bool = True) -> None:
         _append_common_paths()
 
     missing_after = [exe for exe in required if shutil.which(exe) is None]
-    if missing_after:
+    mandatory_missing = [exe for exe in missing_after if required[exe].get("mandatory", True)]
+    optional_missing = [exe for exe in missing_after if not required[exe].get("mandatory", True)]
+    if optional_missing:
+        print("Dipendenze opzionali mancanti (non bloccanti): " + ", ".join(optional_missing))
+    if mandatory_missing:
         raise SystemExit(
-            "Dipendenze sistema mancanti anche dopo tentativo automatico: "
-            + ", ".join(missing_after)
+            "Dipendenze sistema obbligatorie mancanti anche dopo tentativo automatico: "
+            + ", ".join(mandatory_missing)
             + ". Installa manualmente e riavvia il terminale."
         )
 

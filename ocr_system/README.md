@@ -48,7 +48,7 @@ Apri `cmd.exe` nella cartella `ocr_system` e lancia:
 setup_portable_windows.cmd
 ```
 
-Il setup ora prova automaticamente a installare anche dipendenze di sistema OCR (Tesseract, Ghostscript, QPDF) via `winget` o `choco` quando mancanti.
+Il setup ora prova automaticamente a installare dipendenze di sistema OCR (Tesseract e Ghostscript obbligatorie; QPDF opzionale) via `winget` o `choco` quando mancanti.
 Se non vuoi questo comportamento: `python install_windows.py --no-auto-system`.
 
 ### Installazione completa/forzata (quando serve)
@@ -233,3 +233,7 @@ Se manca, la conversione viene fermata con messaggio chiaro.
 Installazione rapida (Windows):
 - `winget install UB-Mannheim.TesseractOCR`
 - oppure `choco install tesseract`
+
+Per Ghostscript:
+- `winget install ArtifexSoftware.Ghostscript`
+- oppure `choco install ghostscript`

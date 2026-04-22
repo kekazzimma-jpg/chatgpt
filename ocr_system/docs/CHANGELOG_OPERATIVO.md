@@ -38,3 +38,6 @@
 
 10. Setup dipendenze sistema automatico
    - Soluzione: installer ora tenta installazione automatica di tesseract/ghostscript/qpdf via winget/choco.
+
+11. Winget non trova alcuni package ID
+   - Soluzione: introdotta lista di ID alternativi e distinzione dipendenze obbligatorie (tesseract/ghostscript) vs opzionali (qpdf).

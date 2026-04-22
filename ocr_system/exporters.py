@@ -216,6 +216,7 @@ def export_docx(document: Dict[str, Any], out_path: Path) -> Path:
 
 def export_searchable_pdf(input_path: Path, out_path: Path) -> Path:
     import importlib.util
+    import shutil
     import subprocess
     import sys
 
@@ -224,6 +225,11 @@ def export_searchable_pdf(input_path: Path, out_path: Path) -> Path:
             "ocrmypdf non installato nell'ambiente corrente. "
             "Esegui setup_full_update.cmd o installa manualmente ocrmypdf + dipendenze sistema."
         )
+
+    if shutil.which("tesseract") is None:
+        raise RuntimeError("tesseract non trovato nel PATH")
+    if shutil.which("gswin64c") is None and shutil.which("gs") is None:
+        raise RuntimeError("ghostscript non trovato nel PATH (gswin64c/gs)")
 
     subprocess.check_call([
         sys.executable,
