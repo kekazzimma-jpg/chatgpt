@@ -204,3 +204,29 @@ Cause identificate:
 Fix applicati:
 - exporter ora ricostruiscono le liste anche quando `items` è assente;
 - exporter e normalizzazione preferiscono `content` completo quando gli spans sono troncati o troppo corti.
+
+
+---
+
+## 15) Corsivo/grassetto/allineamento: limite reale vs obiettivo
+
+Risposta trasparente:
+- Su PDF con **testo selezionabile**, possiamo arrivare molto vicini all'originale perché leggiamo anche informazioni tipografiche locali (font/flags/allineamento stimato).
+- Su PDF **solo raster/scansione**, il riconoscimento di corsivo, grassetto e centratura dipende dal modello vision e non è sempre perfetto.
+
+In questa versione il sistema usa percorso ibrido per PDF:
+1. pagina con testo selezionabile -> estrazione locale strutturale (più fedele su stili/allineamento)
+2. pagina raster -> OCR Gemini vision
+
+Quindi: "quasi perfetto" è realistico sui digitali/misti, meno garantibile sui raster puri degradati.
+
+---
+
+## 16) Requisito Tesseract per PDF ricercabile
+
+Il PDF ricercabile usa `ocrmypdf`, che richiede `tesseract` installato nel PATH.
+Se manca, la conversione viene fermata con messaggio chiaro.
+
+Installazione rapida (Windows):
+- `winget install UB-Mannheim.TesseractOCR`
+- oppure `choco install tesseract`

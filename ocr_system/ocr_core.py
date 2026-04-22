@@ -6,6 +6,7 @@ import logging
 import mimetypes
 import os
 import re
+import statistics
 import time
 from pathlib import Path
 from typing import Any, Dict, List
@@ -117,10 +118,8 @@ def extract_json_text(raw: str) -> str:
 
 def call_gemini_json(api_key: str, model: str, parts: List[dict], retries: int = 5) -> Dict[str, Any]:
     url = f"{GOOGLE_API_BASE}/{model}:generateContent?key={api_key}"
-    payload = {
-        "contents": [{"parts": parts}],
-        "generationConfig": {"response_mime_type": "application/json"},
-    }
+    payload = {"contents": [{"parts": parts}], "generationConfig": {"response_mime_type": "application/json"}}
+
     last: Exception | None = None
     for attempt in range(1, retries + 1):
         try:
@@ -144,28 +143,148 @@ def call_gemini_json(api_key: str, model: str, parts: List[dict], retries: int =
     raise RuntimeError(f"Gemini JSON fallito: {last}")
 
 
+def _detect_alignment(x0: float, x1: float, page_width: float) -> str:
+    cx = (x0 + x1) / 2
+    if abs(cx - page_width / 2) < page_width * 0.10:
+        return "center"
+    if x0 > page_width * 0.55:
+        return "right"
+    return "left"
 
-def _merge_pdf_pages_from_single_calls(input_path: Path, api_key: str, model: str) -> Dict[str, Any]:
+
+def _block_from_text_dict(page: fitz.Page, page_num: int) -> List[Dict[str, Any]]:
+    data = page.get_text("dict")
+    blocks_in = data.get("blocks", []) if isinstance(data, dict) else []
+
+    # median font size for heading heuristic
+    sizes = []
+    for b in blocks_in:
+        for l in b.get("lines", []) if isinstance(b, dict) else []:
+            for sp in l.get("spans", []) if isinstance(l, dict) else []:
+                if isinstance(sp, dict) and isinstance(sp.get("size"), (int, float)):
+                    sizes.append(float(sp["size"]))
+    med = statistics.median(sizes) if sizes else 11.0
+
+    out: List[Dict[str, Any]] = []
+    ridx = 1
+    page_w = page.rect.width
+    for b in blocks_in:
+        if not isinstance(b, dict) or b.get("type") != 0:
+            continue
+        lines = b.get("lines", [])
+        content_lines = []
+        spans_out = []
+        has_bold = False
+        has_italic = False
+        max_size = med
+
+        for l in lines:
+            line_txt = []
+            for sp in l.get("spans", []) if isinstance(l, dict) else []:
+                txt = str(sp.get("text", ""))
+                if not txt:
+                    continue
+                flags = int(sp.get("flags", 0))
+                bold = bool(flags & 16)
+                italic = bool(flags & 2)
+                has_bold = has_bold or bold
+                has_italic = has_italic or italic
+                max_size = max(max_size, float(sp.get("size", med)))
+                line_txt.append(txt)
+                spans_out.append({"text": txt, "bold": bold, "italic": italic, "underline": False, "all_caps": txt.isupper() and len(txt) > 2})
+            if line_txt:
+                content_lines.append("".join(line_txt))
+
+        content = "\n".join([x for x in content_lines if x.strip()]).strip()
+        if not content:
+            continue
+
+        # list detection
+        if re.search(r"^\s*[-•]|^\s*\d+[\)\.]", content, flags=re.M):
+            btype = "list"
+        else:
+            btype = "heading" if (has_bold and max_size >= med + 1.0 and len(content) < 120) else "paragraph"
+
+        x0, y0, x1, y1 = b.get("bbox", [0, 0, page_w, 0])
+        align = _detect_alignment(float(x0), float(x1), float(page_w))
+        out.append(
+            {
+                "id": f"p{page_num}_b{ridx}",
+                "type": btype,
+                "content": content,
+                "style": {
+                    "alignment": align,
+                    "font_size_relative": "large" if max_size >= med + 1.0 else "normal",
+                    "bold": has_bold,
+                    "italic": has_italic,
+                    "underline": False,
+                    "all_caps": content.isupper() and len(content) > 2,
+                    "indent_level": 0,
+                },
+                "inline_spans": spans_out if spans_out else [{"text": content, "bold": has_bold, "italic": has_italic, "underline": False, "all_caps": False}],
+                "reading_order": ridx,
+                "source_page": page_num,
+            }
+        )
+        ridx += 1
+
+    return out
+
+
+def _extract_selectable_page_doc(page: fitz.Page, input_path: Path, page_num: int) -> Dict[str, Any]:
+    blocks = _block_from_text_dict(page, page_num)
+    return {
+        "document_info": {
+            "source_filename": input_path.name,
+            "source_type": "pdf",
+            "page_count": 1,
+            "estimated_page_size": "A4",
+            "orientation": "portrait",
+            "language_estimate": "it",
+            "document_visual_style": "digitale/selezionabile",
+            "ocr_quality": "good",
+            "warnings": [],
+        },
+        "metadata": {
+            "document_title": None,
+            "document_date": None,
+            "document_number": None,
+            "protocol_number": None,
+            "subject": None,
+            "sender": None,
+            "recipients": [],
+            "mentioned_attachments": [],
+            "mentioned_references": [],
+        },
+        "pages": [{"page_number": page_num, "header": "", "footer": "", "page_notes": ["Estrazione da testo selezionabile locale"], "layout_quality": "good", "blocks": blocks}],
+    }
+
+
+def _merge_pdf_pages(input_path: Path, api_key: str, model: str) -> Dict[str, Any]:
+    doc_pdf = fitz.open(input_path)
     pages_png = render_pdf_pages_png(input_path)
     merged_pages: List[Dict[str, Any]] = []
-    global_warnings: List[str] = []
+    warnings: List[str] = []
 
-    for idx, png in enumerate(pages_png, start=1):
-        logging.info("OCR pagina %s/%s", idx, len(pages_png))
-        page_prompt = (
-            get_structured_ocr_prompt()
-            + f"\n\nIMPORTANTE: questa richiesta riguarda SOLO la pagina {idx}/{len(pages_png)}. "
-            "Restituisci pages con una sola pagina."
-        )
-        raw = call_gemini_json(api_key, model, [{"text": page_prompt}, b64_part(png, "image/png")])
-        norm = normalize_document(raw, input_path.name, "pdf")
+    for idx in range(len(doc_pdf)):
+        page = doc_pdf[idx]
+        selectable_text = page.get_text("text").strip()
+        if len(selectable_text) > 180:
+            logging.info("OCR pagina %s/%s -> percorso testo selezionabile", idx + 1, len(doc_pdf))
+            norm = normalize_document(_extract_selectable_page_doc(page, input_path, idx + 1), input_path.name, "pdf")
+        else:
+            logging.info("OCR pagina %s/%s -> percorso Gemini vision", idx + 1, len(doc_pdf))
+            page_prompt = get_structured_ocr_prompt() + f"\n\nIMPORTANTE: questa richiesta riguarda SOLO la pagina {idx+1}/{len(doc_pdf)}. Restituisci pages con una sola pagina."
+            raw = call_gemini_json(api_key, model, [{"text": page_prompt}, b64_part(pages_png[idx], "image/png")])
+            norm = normalize_document(raw, input_path.name, "pdf")
+
         if norm.get("pages"):
-            page = norm["pages"][0]
-            page["page_number"] = idx
-            merged_pages.append(page)
-        global_warnings.extend(norm.get("document_info", {}).get("warnings", []))
+            pg = norm["pages"][0]
+            pg["page_number"] = idx + 1
+            merged_pages.append(pg)
+        warnings.extend(norm.get("document_info", {}).get("warnings", []))
 
-    doc = {
+    merged = {
         "document_info": {
             "source_filename": input_path.name,
             "source_type": "pdf",
@@ -173,9 +292,9 @@ def _merge_pdf_pages_from_single_calls(input_path: Path, api_key: str, model: st
             "estimated_page_size": "A4",
             "orientation": "portrait",
             "language_estimate": "it",
-            "document_visual_style": "documento amministrativo",
+            "document_visual_style": "misto (selectable+raster)",
             "ocr_quality": "fair",
-            "warnings": global_warnings,
+            "warnings": warnings,
         },
         "metadata": {
             "document_title": None,
@@ -190,46 +309,7 @@ def _merge_pdf_pages_from_single_calls(input_path: Path, api_key: str, model: st
         },
         "pages": merged_pages,
     }
-    return normalize_document(doc, input_path.name, "pdf")
-
-
-def _enrich_with_selectable_text(input_path: Path, document: Dict[str, Any]) -> Dict[str, Any]:
-    if input_path.suffix.lower() != ".pdf":
-        return document
-
-    doc_pdf = fitz.open(input_path)
-    pages = document.get("pages", [])
-    for i, p in enumerate(pages):
-        if i >= len(doc_pdf):
-            break
-        selectable = doc_pdf[i].get_text("text").strip()
-        if not selectable:
-            continue
-        blocks = p.get("blocks", []) if isinstance(p.get("blocks"), list) else []
-        joined = "\n".join(str(b.get("content", "")) for b in blocks)
-        # se manca una parte significativa del testo digitale, aggiungi blocco integrazione
-        if len(selectable) > 200 and selectable[:120] not in joined:
-            blocks.append({
-                "id": f"p{i+1}_selectable_fallback",
-                "type": "preformatted",
-                "content": selectable,
-                "style": {
-                    "alignment": "left",
-                    "font_size_relative": "small",
-                    "bold": False,
-                    "italic": False,
-                    "underline": False,
-                    "all_caps": False,
-                    "indent_level": 0,
-                },
-                "inline_spans": [{"text": selectable, "bold": False, "italic": False, "underline": False, "all_caps": False}],
-                "reading_order": len(blocks) + 1,
-                "source_page": i + 1,
-            })
-            p["blocks"] = blocks
-            p.setdefault("page_notes", []).append("Aggiunto testo selezionabile per evitare perdita contenuto")
-
-    return document
+    return normalize_document(merged, input_path.name, "pdf")
 
 
 def _raw_text_fallback(input_path: Path) -> str:
@@ -243,13 +323,12 @@ def ocr_to_document(input_path: Path, api_key: str, model: str) -> Dict[str, Any
     source_type = "pdf" if input_path.suffix.lower() == ".pdf" else "image"
     try:
         if source_type == "pdf":
-            normalized = _merge_pdf_pages_from_single_calls(input_path, api_key, model)
-            return _enrich_with_selectable_text(input_path, normalized)
+            return _merge_pdf_pages(input_path, api_key, model)
 
         img = input_path.read_bytes()
         mime = mimetypes.guess_type(input_path.name)[0] or "image/jpeg"
-        raw_json = call_gemini_json(api_key, model, [{"text": get_structured_ocr_prompt()}, b64_part(img, mime)])
-        return normalize_document(raw_json, input_path.name, source_type)
+        raw = call_gemini_json(api_key, model, [{"text": get_structured_ocr_prompt()}, b64_part(img, mime)])
+        return normalize_document(raw, input_path.name, source_type)
     except Exception as exc:
         logging.error("Fallback OCR JSON: %s", exc)
         return fallback_document(input_path.name, source_type, _raw_text_fallback(input_path), f"fallback attivato: {exc}")

@@ -5,6 +5,7 @@ import argparse
 import os
 import subprocess
 import sys
+import shutil
 from pathlib import Path
 
 MODEL_DEFAULT = "gemini-3.1-flash-lite"
@@ -78,6 +79,16 @@ def register_context_menu(base_dir: Path) -> None:
     print("Menu contestuale registrato per .pdf/.jpg/.jpeg/.png (utente corrente).")
 
 
+def ensure_tesseract() -> None:
+    if shutil.which("tesseract"):
+        print("Tesseract trovato nel PATH.")
+        return
+    raise SystemExit(
+        "Tesseract non trovato nel PATH. Installa Tesseract OCR (es. `winget install UB-Mannheim.TesseractOCR` "
+        "oppure `choco install tesseract`) e poi riavvia il terminale."
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Installer OCR Windows")
     parser.add_argument("--model", default=MODEL_DEFAULT)
@@ -95,6 +106,8 @@ def main() -> None:
 
     print("[1/3] Setup venv + dipendenze...")
     ensure_venv(base_dir, full_install=args.full)
+
+    ensure_tesseract()
 
     print("[2/3] Configuro API key locale...")
     save_env(base_dir, args.model, force_api_prompt=args.force_api)

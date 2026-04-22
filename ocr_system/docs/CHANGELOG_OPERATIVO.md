@@ -30,3 +30,8 @@
 7. Perdita testo in Markdown da JSON valido
    - Causa: blocchi `list` senza `items` venivano quasi ignorati e `inline_spans` troncati con `...` sovrascrivevano il `content` completo.
    - Soluzione: fallback parsing lista da `content` + uso `content` completo quando spans risultano troncati o troppo corti.
+
+8. Bassa fedeltà stile su PDF misti/raster
+   - Soluzione: percorso ibrido per PDF pagina-per-pagina: estrazione locale da testo selezionabile quando disponibile, Gemini vision per pagine raster.
+9. Errore `tesseract` mancante nel PATH
+   - Soluzione: verifica esplicita in setup con messaggio di installazione guidata.
