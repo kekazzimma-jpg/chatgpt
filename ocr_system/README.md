@@ -180,3 +180,15 @@ Se un run fallisce:
 3. esegui `setup_full_update.cmd`
 4. riprova su un PDF corto (1-2 pagine)
 
+
+---
+
+
+## 13) Garanzia maggiore contro testo mancante
+
+Per ridurre i casi di testo incompleto:
+- OCR JSON su PDF viene eseguito pagina per pagina (evita risposte troncate multipagina).
+- Se il PDF contiene testo selezionabile, il sistema integra automaticamente blocchi mancanti nel JSON.
+
+Questa doppia strategia serve proprio per evitare perdita di intere porzioni di testo.
+

@@ -16,6 +16,11 @@
 4. Setup PowerShell bloccato
    - Soluzione: setup via CMD.
 
+5. Errore ocrmypdf: opzioni incompatibili (`--skip-text` + `--force-ocr`)
+   - Soluzione: rimosso conflitto, usato solo `--skip-text`.
+6. Testo mancante nei file generati
+   - Soluzione: OCR PDF pagina-per-pagina + integrazione testo selezionabile quando rilevata perdita contenuto.
+
 ## Cosa monitorare ogni run
 - tempi run
 - qualità JSON blocchi/inline_spans

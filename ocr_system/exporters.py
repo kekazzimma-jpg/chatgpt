@@ -202,6 +202,5 @@ def export_searchable_pdf(input_path: Path, out_path: Path) -> Path:
         str(input_path),
         str(out_path),
         "--skip-text",
-        "--force-ocr",
     ])
     return out_path
