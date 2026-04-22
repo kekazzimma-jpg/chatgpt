@@ -113,3 +113,17 @@ In caso di errore, la finestra resta aperta e mostra il percorso del log.
 - Gli output vengono sanitizzati per rimuovere eventuali prefissi tipo ```html / ```.
 - Per ogni pagina si usa un contenitore con dimensioni originali PDF (pt), così margini/rientri/indentazioni risultano più leggibili.
 - Prompt HTML rafforzato per preservare corsivi, allineamenti, elenchi puntati e spaziature.
+
+
+## Output DOCX (Word) oltre a MD/HTML
+
+Ora il sistema genera anche un file `.docx` (sperimentale) accanto a `.md` e `.html`, con obiettivo di mantenere meglio struttura, elenchi e formattazione per l'uso in Word.
+
+- Per disattivarlo: `--no-docx`
+- Dipendenza usata: `html2docx`
+
+## Ottimizzazioni contro HTML "pesanti" e lentezza
+
+- Blocco di immagini/base64 nell'output HTML (rimozione `<img>` e data URI enormi).
+- Rendering PDF a DPI più contenuto per velocizzare le chiamate.
+- Riutilizzo delle stesse immagini pagina sia per MD sia per HTML (niente render duplicato).

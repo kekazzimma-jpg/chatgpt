@@ -33,7 +33,7 @@ PROMPT_HTML_PAGE = (
     "Ricostruisci SOLO la pagina mostrata nell'immagine come frammento HTML (senza <html>, <head>, <body>). "
     "Obiettivo: massima fedeltà visiva su impaginazione, corsivi, allineamenti, rientri, spaziature, elenchi puntati e margini. "
     "Usa contenitori con positioning CSS (preferibilmente assoluto all'interno della pagina) quando necessario. "
-    "NON includere markdown fences (niente ```html). Restituisci SOLO HTML puro."
+    "NON includere markdown fences (niente ```html). Non usare <img>, SVG base64, canvas o data URI. Restituisci SOLO HTML puro."
 )
 
 
@@ -142,7 +142,7 @@ def analyze_pdf(path: Path) -> SourceAnalysis:
     return SourceAnalysis(kind=kind, pages=pages, text_pages=text_pages)
 
 
-def render_pdf_page_as_png(path: Path, page_index: int, dpi: int = 240) -> bytes:
+def render_pdf_page_as_png(path: Path, page_index: int, dpi: int = 170) -> bytes:
     doc = fitz.open(path)
     page = doc[page_index]
     pix = page.get_pixmap(matrix=fitz.Matrix(dpi / 72, dpi / 72), alpha=False)
@@ -165,6 +165,12 @@ def sanitize_model_output(text: str) -> str:
     t = re.sub(r"\s*```$", "", t)
     return t.strip()
 
+
+def strip_heavy_media_from_html(html: str) -> str:
+    cleaned = re.sub(r"<img[^>]*>", "", html, flags=re.IGNORECASE)
+    cleaned = re.sub(r"data:image/[^;]+;base64,[A-Za-z0-9+/=\s]+", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"background-image\s*:\s*url\([^)]*data:image[^)]*\)", "", cleaned, flags=re.IGNORECASE)
+    return cleaned
 
 def call_gemini(api_key: str, model: str, parts: List[dict]) -> str:
     r = requests.post(
@@ -199,19 +205,23 @@ def build_html_document(page_fragments: List[str], page_sizes: List[Tuple[float,
         pages.append(
             f'<section class="page" style="width:{w}pt;height:{h}pt;"><div class="page-content">{frag}</div></section>'
         )
-    return "<html><head><meta charset='utf-8'><style>" + css + "</style></head><body><div class='doc-wrap'>" + "".join(
-        pages
-    ) + "</div></body></html>"
+    html = "<html><head><meta charset='utf-8'><style>" + css + "</style></head><body><div class='doc-wrap'>" + "".join(pages) + "</div></body></html>"
+    return strip_heavy_media_from_html(html)
 
 
-def generate_html_from_pdf_pages(path: Path, api_key: str, model: str) -> str:
+def render_pdf_pages_png(path: Path) -> List[bytes]:
+    doc = fitz.open(path)
+    return [render_pdf_page_as_png(path, i) for i in range(len(doc))]
+
+def generate_html_from_pdf_pages(path: Path, api_key: str, model: str, page_pngs: List[bytes] | None = None) -> str:
     doc = fitz.open(path)
     fragments: List[str] = []
     sizes: List[Tuple[float, float]] = []
+    if page_pngs is None:
+        page_pngs = render_pdf_pages_png(path)
 
-    for i in range(len(doc)):
-        logging.info("HTML pagina %s/%s", i + 1, len(doc))
-        png = render_pdf_page_as_png(path, i)
+    for i, png in enumerate(page_pngs):
+        logging.info("HTML pagina %s/%s", i + 1, len(page_pngs))
         frag = call_gemini(api_key, model, [{"text": PROMPT_HTML_PAGE}, b64_part(png, "image/png")])
         fragments.append(frag)
         sizes.append(get_pdf_page_size_pt(path, i))
@@ -219,7 +229,7 @@ def generate_html_from_pdf_pages(path: Path, api_key: str, model: str) -> str:
     return build_html_document(fragments, sizes)
 
 
-def extract_markdown_from_pdf(path: Path, api_key: str, model: str, analysis: SourceAnalysis) -> str:
+def extract_markdown_from_pdf(path: Path, api_key: str, model: str, analysis: SourceAnalysis, page_pngs: List[bytes] | None = None) -> str:
     if analysis.kind == "pdf_digital":
         doc = fitz.open(path)
         full_text = "\n\n".join(p.get_text("text") for p in doc)
@@ -230,8 +240,9 @@ def extract_markdown_from_pdf(path: Path, api_key: str, model: str, analysis: So
             [{"text": PROMPT_MD + "\n\nTesto PDF:\n" + full_text[:400000]}, b64_part(cover, "image/png")],
         )
 
-    doc = fitz.open(path)
-    image_parts = [b64_part(render_pdf_page_as_png(path, i), "image/png") for i in range(len(doc))]
+    if page_pngs is None:
+        page_pngs = render_pdf_pages_png(path)
+    image_parts = [b64_part(img, "image/png") for img in page_pngs]
     return call_gemini(api_key, model, [{"text": PROMPT_MD}] + image_parts)
 
 
@@ -246,7 +257,17 @@ def extract_from_image(path: Path, api_key: str, model: str) -> tuple[str, str, 
     return md, html, SourceAnalysis(kind="image", pages=1, text_pages=0)
 
 
-def save_outputs(input_path: Path, md: str, html: str, analysis: SourceAnalysis) -> tuple[Path, Path]:
+def save_docx_from_html(html: str, output_path: Path) -> None:
+    try:
+        from html2docx import html2docx  # type: ignore
+    except ImportError:
+        logging.warning("html2docx non installato: salto output DOCX")
+        return
+
+    bio = html2docx(html, title=output_path.stem)
+    output_path.write_bytes(bio.getvalue())
+
+def save_outputs(input_path: Path, md: str, html: str, analysis: SourceAnalysis, with_docx: bool = True) -> tuple[Path, Path, Path | None]:
     out = input_path.parent / "OCR"
     out.mkdir(exist_ok=True)
     md_path = out / f"{input_path.stem}.md"
@@ -255,7 +276,11 @@ def save_outputs(input_path: Path, md: str, html: str, analysis: SourceAnalysis)
     meta = f"<!-- source_kind={analysis.kind}; pages={analysis.pages}; text_pages={analysis.text_pages} -->\n\n"
     md_path.write_text(meta + sanitize_model_output(md), encoding="utf-8")
     html_path.write_text("<!-- " + meta.strip() + " -->\n" + sanitize_model_output(html), encoding="utf-8")
-    return md_path, html_path
+    docx_path = None
+    if with_docx:
+        docx_path = out / f"{input_path.stem}.docx"
+        save_docx_from_html(sanitize_model_output(html), docx_path)
+    return md_path, html_path, docx_path
 
 
 def setup_logger(input_path: Path) -> Path:
@@ -281,6 +306,7 @@ def main() -> None:
     parser.add_argument("input_file")
     parser.add_argument("--model", default="")
     parser.add_argument("--api-key", default="")
+    parser.add_argument("--no-docx", action="store_true", help="Disabilita output DOCX")
     args = parser.parse_args()
 
     input_path = Path(args.input_file).expanduser().resolve()
@@ -304,16 +330,19 @@ def main() -> None:
         if suffix == ".pdf":
             analysis = analyze_pdf(input_path)
             logging.info("Strategia: %s", analysis.kind)
-            md = extract_markdown_from_pdf(input_path, api_key, model, analysis)
-            html = generate_html_from_pdf_pages(input_path, api_key, model)
+            page_pngs = render_pdf_pages_png(input_path)
+            md = extract_markdown_from_pdf(input_path, api_key, model, analysis, page_pngs=page_pngs)
+            html = generate_html_from_pdf_pages(input_path, api_key, model, page_pngs=page_pngs)
         elif suffix in {".jpg", ".jpeg", ".png"}:
             md, html, analysis = extract_from_image(input_path, api_key, model)
         else:
             raise SystemExit("Formato non supportato. Usa PDF/JPG/JPEG/PNG.")
 
-        md_path, html_path = save_outputs(input_path, md, html, analysis)
+        md_path, html_path, docx_path = save_outputs(input_path, md, html, analysis, with_docx=not args.no_docx)
         print(f"[OK] Markdown: {md_path}")
         print(f"[OK] HTML: {html_path}")
+        if docx_path is not None:
+            print(f"[OK] DOCX: {docx_path}")
         print(f"[OK] Log: {log_path}")
     except Exception as exc:
         logging.error("Errore durante conversione: %s", exc)
