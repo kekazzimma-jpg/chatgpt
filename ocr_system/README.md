@@ -1,47 +1,44 @@
 # Sistema OCR portatile → Markdown + HTML
 
-Obiettivo: usare **quasi solo il menu contestuale Windows** (click destro), con setup semplice anche su PC diversi.
+Obiettivo: uso principale tramite **menu contestuale Windows** (click destro), con setup rapido su PC diversi.
 
 ## Cosa fa
 
-Converte automaticamente:
-- PDF con testo selezionabile,
-- PDF scansiti (raster o scritto a mano),
-- PDF misti,
-- immagini JPG/JPEG/PNG,
-
-in **2 output** nella cartella `OCR` (accanto al file sorgente):
-1. `nomefile.md` (ottimizzato per LLM)
+Converte automaticamente PDF (digitali/scansiti/misti) e immagini (JPG/JPEG/PNG) in:
+1. `nomefile.md` (LLM-friendly)
 2. `nomefile.html` (resa visuale più fedele possibile)
 
-## Strategia adattiva
+Gli output vengono salvati nella cartella `OCR` accanto al file sorgente.
 
-Lo script sceglie in automatico la procedura migliore:
-- `pdf_digital`: usa testo selezionabile + preview pagina.
-- `pdf_scanned`: OCR vision pagina per pagina.
-- `pdf_mixed`: OCR vision multi-pagina (evita perdita blocchi raster).
-- `image`: OCR vision diretto.
+## Installazione consigliata (NO PowerShell policy issues)
 
-## Installazione rapida (portabile)
+Apri `cmd.exe` nella cartella `ocr_system` e lancia:
 
-1. Copia la cartella `ocr_system` dove vuoi (es: chiavetta, cloud sync, ecc.).
-2. Apri PowerShell in quella cartella.
-3. Esegui:
-
-```powershell
-.\setup_portable_windows.ps1
+```bat
+setup_portable_windows.cmd
 ```
 
-Lo script farà tutto:
+Questo evita il problema tipico di PowerShell:
+> "script non firmato digitalmente / ExecutionPolicy"
+
+Il setup `.cmd` avvia un installer Python che:
 - crea `.venv` locale,
 - installa dipendenze,
-- ti chiede la chiave Google AI Studio,
-- salva la chiave in `ocr_system/.env`,
-- registra il menu contestuale per `.pdf/.jpg/.jpeg/.png` (utente corrente, senza admin).
+- chiede la tua `GOOGLE_API_KEY`,
+- salva la key in `ocr_system/.env`,
+- registra il menu contestuale per `.pdf/.jpg/.jpeg/.png` (utente corrente, no admin).
 
-## Dove inserire e salvare la API key Google
+## Se vuoi comunque usare PowerShell
 
-La chiave viene salvata in:
+Puoi avviare temporaneamente lo script ignorando la policy solo per la sessione corrente:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\setup_portable_windows.ps1
+```
+
+## Dove salvare la API key Google
+
+La key viene salvata in:
 
 `ocr_system/.env`
 
@@ -52,32 +49,22 @@ GOOGLE_API_KEY=la_tua_chiave
 GEMINI_MODEL=gemini-3.1-flash-lite
 ```
 
-Ordine di priorità usato dal programma:
-1. `--api-key` da riga comando
+Priorità lettura configurazione:
+1. `--api-key`
 2. variabile ambiente `GOOGLE_API_KEY`
 3. file locale `ocr_system/.env`
 
-## Uso quotidiano (principale)
+## Uso quotidiano
 
-- Tasto destro sul file → **Converti in MD + HTML (OCR)**.
-- Il sistema crea automaticamente la cartella `OCR` vicino al file sorgente.
-
-## Uso da terminale (opzionale)
-
-```bash
-python convert.py "C:\\path\\documento.pdf"
-```
+- Tasto destro su file → **Converti in MD + HTML (OCR)**.
+- Output automatici in cartella `OCR`.
 
 ## File principali
 
 - `convert.py`: motore OCR/adattivo
-- `run_ocr.cmd`: launcher chiamato dal menu contestuale
-- `setup_portable_windows.ps1`: setup automatico portabile
-- `.env.example`: template configurazione API
+- `install_windows.py`: setup portabile senza PowerShell
+- `setup_portable_windows.cmd`: avvio setup consigliato
+- `run_ocr.cmd`: launcher usato dal menu contestuale
+- `setup_portable_windows.ps1`: alternativa PowerShell
+- `.env.example`: template API
 - `requirements.txt`: dipendenze Python
-
-## Note
-
-- Se sposti la cartella su un altro PC, riesegui `setup_portable_windows.ps1`.
-- Il modello di default è `gemini-3.1-flash-lite`.
-- Per documenti molto lunghi può servire chunking (estensione futura).
