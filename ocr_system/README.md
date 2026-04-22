@@ -127,3 +127,10 @@ Ora il sistema genera anche un file `.docx` (sperimentale) accanto a `.md` e `.h
 - Blocco di immagini/base64 nell'output HTML (rimozione `<img>` e data URI enormi).
 - Rendering PDF a DPI più contenuto per velocizzare le chiamate.
 - Riutilizzo delle stesse immagini pagina sia per MD sia per HTML (niente render duplicato).
+
+
+## Resilienza API (errori 503/429/5xx)
+
+- Le chiamate Gemini ora hanno retry automatico con backoff esponenziale (utile su `Service Unavailable`).
+- Se una singola pagina HTML fallisce anche dopo i retry, il processo continua: il file HTML viene comunque creato con placeholder di errore per quella pagina, invece di interrompersi completamente.
+- Se fallisce la generazione HTML globale, viene comunque scritto un HTML minimo e il log indica il problema.

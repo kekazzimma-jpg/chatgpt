@@ -11,6 +11,7 @@ import mimetypes
 import os
 import re
 import traceback
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -172,19 +173,31 @@ def strip_heavy_media_from_html(html: str) -> str:
     cleaned = re.sub(r"background-image\s*:\s*url\([^)]*data:image[^)]*\)", "", cleaned, flags=re.IGNORECASE)
     return cleaned
 
-def call_gemini(api_key: str, model: str, parts: List[dict]) -> str:
-    r = requests.post(
-        f"{GOOGLE_API_BASE}/{model}:generateContent?key={api_key}",
-        json={"contents": [{"parts": parts}]},
-        timeout=240,
-    )
-    r.raise_for_status()
-    data = r.json()
-    try:
-        return sanitize_model_output(data["candidates"][0]["content"]["parts"][0]["text"])
-    except (KeyError, IndexError) as exc:
-        raise RuntimeError(f"Risposta Gemini inattesa: {json.dumps(data)[:1000]}") from exc
+def call_gemini(api_key: str, model: str, parts: List[dict], retries: int = 5) -> str:
+    url = f"{GOOGLE_API_BASE}/{model}:generateContent?key={api_key}"
+    payload = {"contents": [{"parts": parts}]}
 
+    last_exc: Exception | None = None
+    for attempt in range(1, retries + 1):
+        try:
+            r = requests.post(url, json=payload, timeout=240)
+            if r.status_code in {429, 500, 502, 503, 504}:
+                raise requests.HTTPError(f"{r.status_code} transient", response=r)
+            r.raise_for_status()
+            data = r.json()
+            return sanitize_model_output(data["candidates"][0]["content"]["parts"][0]["text"])
+        except Exception as exc:  # retry network/transient API issues
+            last_exc = exc
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            is_transient = status in {429, 500, 502, 503, 504} or isinstance(exc, requests.RequestException)
+            if attempt < retries and is_transient:
+                wait_s = min(20, 2 ** (attempt - 1))
+                logging.warning("Gemini errore temporaneo (tentativo %s/%s, status=%s). Retry tra %ss.", attempt, retries, status, wait_s)
+                time.sleep(wait_s)
+                continue
+            break
+
+    raise RuntimeError(f"Chiamata Gemini fallita dopo {retries} tentativi: {last_exc}")
 
 def build_html_document(page_fragments: List[str], page_sizes: List[Tuple[float, float]]) -> str:
     css = """
@@ -222,7 +235,15 @@ def generate_html_from_pdf_pages(path: Path, api_key: str, model: str, page_pngs
 
     for i, png in enumerate(page_pngs):
         logging.info("HTML pagina %s/%s", i + 1, len(page_pngs))
-        frag = call_gemini(api_key, model, [{"text": PROMPT_HTML_PAGE}, b64_part(png, "image/png")])
+        try:
+            frag = call_gemini(api_key, model, [{"text": PROMPT_HTML_PAGE}, b64_part(png, "image/png")])
+        except Exception as exc:
+            logging.error("HTML pagina %s fallita dopo retry: %s", i + 1, exc)
+            frag = (
+                "<div style='padding:24pt;font-family:Arial,sans-serif;color:#900'>"
+                f"Errore generazione pagina {i + 1}. Controlla ocr_debug.log."
+                "</div>"
+            )
         fragments.append(frag)
         sizes.append(get_pdf_page_size_pt(path, i))
 
@@ -332,7 +353,11 @@ def main() -> None:
             logging.info("Strategia: %s", analysis.kind)
             page_pngs = render_pdf_pages_png(input_path)
             md = extract_markdown_from_pdf(input_path, api_key, model, analysis, page_pngs=page_pngs)
-            html = generate_html_from_pdf_pages(input_path, api_key, model, page_pngs=page_pngs)
+            try:
+                html = generate_html_from_pdf_pages(input_path, api_key, model, page_pngs=page_pngs)
+            except Exception as exc:
+                logging.error("Fallback HTML globale: %s", exc)
+                html = "<html><body><pre>Errore generazione HTML. Vedi log.</pre></body></html>"
         elif suffix in {".jpg", ".jpeg", ".png"}:
             md, html, analysis = extract_from_image(input_path, api_key, model)
         else:
