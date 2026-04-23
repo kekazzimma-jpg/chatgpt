@@ -43,11 +43,11 @@ foreach ($ext in $extensions) {
   $shellKey = Join-Path $base "$ext\shell\OCR_to_MD_HTML"
   $cmdKey = Join-Path $shellKey "command"
   New-Item -Path $shellKey -Force | Out-Null
-  New-ItemProperty -Path $shellKey -Name "(default)" -Value "Converti in MD + HTML (OCR)" -Force | Out-Null
+  New-ItemProperty -Path $shellKey -Name "(default)" -Value "Converti con OCR (MD/HTML/DOCX/PDF)" -Force | Out-Null
   New-ItemProperty -Path $shellKey -Name "Icon" -Value "imageres.dll,-5302" -Force | Out-Null
   New-Item -Path $cmdKey -Force | Out-Null
   $command = "cmd /c \"\"$runCmd\" \"%1\"\""
   New-ItemProperty -Path $cmdKey -Name "(default)" -Value $command -Force | Out-Null
 }
 
-Write-Host "Setup completato. Ora usa click destro su file -> Converti in MD + HTML (OCR)."
+Write-Host "Setup completato. Ora usa click destro su file -> Converti con OCR (MD/HTML/DOCX/PDF)."

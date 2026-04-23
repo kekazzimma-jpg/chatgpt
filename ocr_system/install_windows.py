@@ -155,7 +155,7 @@ def register_context_menu(base_dir: Path) -> None:
         cmd_key = shell_key + r"\command"
 
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, shell_key) as k:
-            winreg.SetValueEx(k, "", 0, winreg.REG_SZ, "Converti in MD + HTML (OCR)")
+            winreg.SetValueEx(k, "", 0, winreg.REG_SZ, "Converti con OCR (MD/HTML/DOCX/PDF)")
             winreg.SetValueEx(k, "Icon", 0, winreg.REG_SZ, "imageres.dll,-5302")
 
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, cmd_key) as k:
@@ -180,10 +180,10 @@ def main() -> None:
         print("Aggiornamento menu completato.")
         return
 
-    print("[1/3] Setup venv + dipendenze Python...")
+    print("[1/4] Setup venv + dipendenze Python...")
     ensure_venv(base_dir, full_install=args.full)
 
-    print("[2/3] Verifica dipendenze sistema OCR (tesseract obbligatorio; ghostscript/qpdf opzionali)...")
+    print("[2/4] Verifica dipendenze sistema OCR (tesseract obbligatorio; ghostscript/qpdf opzionali)...")
     ensure_system_dependencies(auto_install=not args.no_auto_system)
 
     print("[3/4] Configuro API key locale...")
@@ -192,7 +192,7 @@ def main() -> None:
     print("[4/4] Registro menu contestuale...")
     register_context_menu(base_dir)
 
-    print("Setup completato. Usa click destro: Converti in MD + HTML (OCR).")
+    print("Setup completato. Usa click destro: Converti con OCR (MD/HTML/DOCX/PDF).")
 
 
 if __name__ == "__main__":

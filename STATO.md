@@ -56,7 +56,7 @@ Log runtime (generati durante l'uso, non nel repo):
    - tentata installazione di tesseract (obbligatorio) e ghostscript/qpdf (opzionali) via winget/choco,
    - chiesta la `GOOGLE_API_KEY` e scritta in `ocr_system/.env`,
    - registrate le voci del menu contestuale per `.pdf/.jpg/.jpeg/.png`.
-3. Tasto destro su un PDF/JPG/PNG → voce "Converti in MD + HTML (OCR)". L'output va in `OCR/` accanto al file.
+3. Tasto destro su un PDF/JPG/PNG → voce "Converti con OCR (MD/HTML/DOCX/PDF)". L'output va in `OCR/` accanto al file.
 4. In alternativa da CLI: `python convert.py "C:\path\file.pdf"`. Il PDF ricercabile viene sempre generato.
 5. In caso di errori, controllare `OCR/ocr_run.log` e `OCR/ocr_debug.log`. Per reset completo: `setup_full_update.cmd`.
 
@@ -79,13 +79,13 @@ Log runtime (generati durante l'uso, non nel repo):
 
 ## Problemi aperti
 
-1. **Incoerenza output reali vs testi del menu / setup / README.** La voce del menu è "Converti in MD + HTML (OCR)" ma il flusso di default produce JSON + MD + HTML + DOCX + PDF ricercabile. Alcuni testi in README e docs parlano di "MD + HTML" o di Ghostscript come consigliato pur essendo opzionale. Da allineare.
+1. ~~**Incoerenza output reali vs testi del menu / setup / README.**~~ Risolto il 2026-04-23 (sessione correnti sicure): voce menu allineata a "Converti con OCR (MD/HTML/DOCX/PDF)" in `install_windows.py`, `setup_portable_windows.ps1`, `install_windows_context_menu.reg`, `README.md`; in README Ghostscript non è più "consigliato" ma chiaramente "opzionale, non richiesto dal flusso di default". Resta da verificare `docs/PROJECT_DETAILS.md` e `docs/CHANGELOG_OPERATIVO.md` (non toccati: documenti storici).
 2. **Retry Gemini troppo permissivo su errori non transitori.** In `ocr_core.py::call_gemini_json` la condizione `transient` include `isinstance(exc, requests.RequestException)`, che è vera anche per `HTTPError` su 4xx (400, 401, 403, 404). Di conseguenza il sistema fa retry anche su errori non recuperabili (API key errata, modello inesistente, payload invalido), sprecando tempo e quota. Da restringere ai soli status transienti + errori di trasporto (ConnectionError/Timeout).
 3. **Possibile perdita o appiattimento di `inline_spans`.** In `document_model.py::_normalize_block` e in `exporters.py::_block_text_md`, se gli spans sembrano troncati (`...`/`…`) o se la loro lunghezza è < 60% del `content`, gli spans vengono rimpiazzati da un singolo span piatto ricostruito dal `content`. Questo risolve il caso "testo mancante" ma elimina il bold/italic interno quando la stima di completezza scatta per altri motivi (es. testo con molti spazi o simboli). Da rivedere la soglia e/o preservare almeno gli attributi di stile.
 4. **Resa non affidabile di grassetti/corsivi interni e centrature.** Oltre al punto 3, su pagine raster la detection dipende dal modello Gemini; su pagine selezionabili viene da flag PyMuPDF (bold = flag & 16, italic = flag & 2) che non coprono tutti i casi (es. font "pseudo-bold" senza flag). Allineamento stimato via bbox con soglia 10% sulla larghezza pagina (`_detect_alignment`): robusto ma grossolano.
 5. **Possibile paragrafo superfluo nel DOCX per `list`/`table`.** In `exporters.py::export_docx`, il ciclo per ogni blocco crea *sempre* prima un `doc.add_paragraph()` (o heading) e ci mette dentro gli spans. Solo *dopo*, se il tipo è `list` o `table`, aggiunge items/tabella. Per blocchi `list`/`table`, il paragrafo iniziale contiene il `content` grezzo del blocco, duplicando o anticipando la lista/tabella. Da verificare se va emesso solo il contenuto strutturato.
 6. **Log non allineati con `output_dir` personalizzato.** In `convert.py::setup_logger` il file `ocr_debug.log` viene sempre scritto in `input_path.parent / "OCR"`, ignorando il parametro `--output-dir`. Se l'utente manda gli output altrove, i log restano accanto al file sorgente.
-7. **Setup Windows e file `.reg` da chiarire / semplificare.** Convivono tre meccanismi di registrazione menu: `install_windows.py` via `winreg` (HKCU, metodo reale in uso), `setup_portable_windows.ps1` che fa la stessa cosa in PowerShell, e `install_windows_context_menu.reg` con path hardcoded `C:\OCR\convert.py` (legacy, da verificare se ancora utile). Inoltre la catena `.cmd` → `install_windows.py` → winget/choco è ridondante e fragile se `py -3` non è presente. Da consolidare un flusso unico.
+7. **Setup Windows e file `.reg` da chiarire / semplificare.** Parzialmente affrontato il 2026-04-23: `install_windows_context_menu.reg` è stato declassato con un'intestazione esplicita "FILE LEGACY - NON È IL METODO DI INSTALLAZIONE PRINCIPALE" che rimanda a `setup_portable_windows.cmd` / `install_windows.py --register-only` / `refresh_context_menu.cmd`, e spiega le differenze (HKCR vs HKCU, path hardcoded, nessun launcher `run_ocr.cmd`). Corretta anche la numerazione dei passi di `install_windows.py::main` (era `[1/3]`, `[2/3]`, `[3/4]`, `[4/4]`: ora tutti `[x/4]`). Resta aperto il consolidamento del flusso unico (scelta fra `.cmd` + `.ps1` + `install_windows.py` + `.reg`) e la fragilità di `py -3` come prerequisito.
 
 ---
 
@@ -126,8 +126,16 @@ Nessuna modifica al codice è stata fatta in questa sessione: obiettivo esclusiv
 
 Allineare la condizione di retry di Gemini in `ocr_core.py::call_gemini_json` in modo che gli errori 4xx non transitori (400, 401, 403, 404) non vengano ritentati. È il fix a rischio più basso, più isolato, e rimuove un comportamento che può anche mascherare errori di configurazione (API key / model id). Dopo questo, valutare se affrontare il punto 3 (appiattimento spans) perché impatta direttamente la fedeltà visiva degli export.
 
+Aperto come micro-task parallelo: decidere se `install_windows_context_menu.reg` va solo declassato (stato attuale) o eliminato del tutto; in caso di eliminazione, aggiornare anche `STATO.md::Struttura reale del progetto`.
+
 ---
 
 ## Diario sintetico delle sessioni
 
 - **2026-04-23** — Creata la memoria condivisa del progetto: `AGENTS.md`, `CLAUDE.md`, `STATO.md` nella root. Nessuna modifica al codice OCR. Lettura completa del repo (`ocr_system/`) e mappatura di problemi aperti, decisioni prese, prossimo passo consigliato.
+- **2026-04-23** — Primo batch di correzioni sicure (nessuna modifica a logica OCR, PDF ricercabile, `inline_spans` o fallback). File toccati:
+  - `ocr_system/install_windows.py`: etichetta menu contestuale passata da "Converti in MD + HTML (OCR)" a "Converti con OCR (MD/HTML/DOCX/PDF)" (riflette gli output reali); numerazione dei passi di `main()` corretta da `[1/3] … [3/4] [4/4]` a `[1/4] … [4/4]`; aggiornata la stringa finale "Setup completato".
+  - `ocr_system/setup_portable_windows.ps1`: stessa etichetta allineata (valore registro e messaggio finale).
+  - `ocr_system/install_windows_context_menu.reg`: aggiunta intestazione commentata "FILE LEGACY - NON È IL METODO DI INSTALLAZIONE PRINCIPALE" con riferimento al flusso ufficiale (`setup_portable_windows.cmd` / `install_windows.py --register-only` / `refresh_context_menu.cmd`) e spiegazione delle differenze (HKCR vs HKCU, path hardcoded, niente launcher `run_ocr.cmd`). Allineate anche le etichette di menu nel file.
+  - `ocr_system/README.md`: sezione 5 aggiornata alla nuova etichetta e chiarito che la cartella `OCR` contiene JSON + MD + HTML + DOCX + PDF ricercabile; sezione 16 "Per Ghostscript (opzionale ma consigliato)" → "opzionale, non richiesto dal flusso di default" per coerenza con la scelta `--skip-text --output-type pdf`.
+  - `STATO.md`: aggiornata voce "Come si prova su Windows" con la nuova etichetta, segnati come risolti/parzialmente affrontati i problemi 1 e 7, aggiunto questo diario e prossimo passo invariato (retry Gemini).

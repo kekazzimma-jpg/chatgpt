@@ -95,8 +95,8 @@ GEMINI_MODEL=gemini-3.1-flash-lite
 ## 5) Uso da tasto destro
 
 1. Tasto destro su PDF/JPG/PNG
-2. **Converti in MD + HTML (OCR)**
-3. Vai nella cartella `OCR` creata accanto al file sorgente
+2. **Converti con OCR (MD/HTML/DOCX/PDF)**
+3. Vai nella cartella `OCR` creata accanto al file sorgente (contiene JSON, MD, HTML, DOCX e PDF ricercabile)
 
 ---
 
@@ -239,6 +239,6 @@ Installazione rapida (Windows):
 - `winget install UB-Mannheim.TesseractOCR`
 - oppure `choco install tesseract`
 
-Per Ghostscript (opzionale ma consigliato):
+Per Ghostscript (opzionale, non richiesto dal flusso di default):
 - `winget install ArtifexSoftware.Ghostscript`
 - oppure `choco install ghostscript`

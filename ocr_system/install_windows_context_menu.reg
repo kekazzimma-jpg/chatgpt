@@ -1,30 +1,48 @@
 Windows Registry Editor Version 5.00
 
-; Adatta C:\OCR\convert.py al percorso reale.
+; ============================================================================
+; FILE LEGACY - NON È IL METODO DI INSTALLAZIONE PRINCIPALE.
+; ----------------------------------------------------------------------------
+; Il metodo ufficiale per registrare il menu contestuale è:
+;   1) setup_portable_windows.cmd  (esegue install_windows.py, HKCU, no admin)
+;   2) oppure: python install_windows.py --register-only
+;   3) oppure: refresh_context_menu.cmd
+;
+; Questo .reg è conservato solo come riferimento manuale per utenti avanzati
+; che vogliono ispezionare le chiavi registrate. Differenze rispetto al
+; metodo ufficiale:
+;   - scrive in HKEY_CLASSES_ROOT (richiede privilegi admin) invece di HKCU;
+;   - usa un comando hardcoded che assume il progetto in C:\OCR\convert.py
+;     e invoca il `python` di sistema, non il venv locale `.venv\Scripts\python.exe`;
+;   - non usa il launcher `run_ocr.cmd`, quindi niente log `ocr_run.log`.
+;
+; Se decidi comunque di applicarlo a mano, adatta C:\OCR\convert.py al percorso
+; reale del tuo clone.
+; ============================================================================
 
 [HKEY_CLASSES_ROOT\SystemFileAssociations\.pdf\shell\OCR_to_MD_HTML]
-@="Converti in MD + HTML (OCR)"
+@="Converti con OCR (MD/HTML/DOCX/PDF)"
 "Icon"="imageres.dll,-5302"
 
 [HKEY_CLASSES_ROOT\SystemFileAssociations\.pdf\shell\OCR_to_MD_HTML\command]
 @="cmd /c python \"C:\\OCR\\convert.py\" \"%1\""
 
 [HKEY_CLASSES_ROOT\SystemFileAssociations\.jpg\shell\OCR_to_MD_HTML]
-@="Converti in MD + HTML (OCR)"
+@="Converti con OCR (MD/HTML/DOCX/PDF)"
 "Icon"="imageres.dll,-5302"
 
 [HKEY_CLASSES_ROOT\SystemFileAssociations\.jpg\shell\OCR_to_MD_HTML\command]
 @="cmd /c python \"C:\\OCR\\convert.py\" \"%1\""
 
 [HKEY_CLASSES_ROOT\SystemFileAssociations\.jpeg\shell\OCR_to_MD_HTML]
-@="Converti in MD + HTML (OCR)"
+@="Converti con OCR (MD/HTML/DOCX/PDF)"
 "Icon"="imageres.dll,-5302"
 
 [HKEY_CLASSES_ROOT\SystemFileAssociations\.jpeg\shell\OCR_to_MD_HTML\command]
 @="cmd /c python \"C:\\OCR\\convert.py\" \"%1\""
 
 [HKEY_CLASSES_ROOT\SystemFileAssociations\.png\shell\OCR_to_MD_HTML]
-@="Converti in MD + HTML (OCR)"
+@="Converti con OCR (MD/HTML/DOCX/PDF)"
 "Icon"="imageres.dll,-5302"
 
 [HKEY_CLASSES_ROOT\SystemFileAssociations\.png\shell\OCR_to_MD_HTML\command]
