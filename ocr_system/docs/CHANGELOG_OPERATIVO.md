@@ -1,0 +1,53 @@
+# CHANGELOG OPERATIVO
+
+## Stato corrente
+- Rifattorizzazione modulare completata.
+- JSON intermedio introdotto e centralizzato.
+- DOCX generato da JSON (non da HTML).
+- PDF ricercabile reso obbligatorio nel flusso.
+
+## Problemi incontrati (storico sintetico)
+1. Errore modello Gemini non trovato (404)
+   - Soluzione: risoluzione model-id contro lista modelli disponibile.
+2. HTML troncato o pesante
+   - Soluzione: sanitizzazione e architettura exporter separati.
+3. Errori temporanei Gemini (503)
+   - Soluzione: retry/backoff nel core API.
+4. Setup PowerShell bloccato
+   - Soluzione: setup via CMD.
+
+5. Errore ocrmypdf: opzioni incompatibili (`--skip-text` + `--force-ocr`)
+   - Soluzione: rimosso conflitto, usato solo `--skip-text`.
+6. Testo mancante nei file generati
+   - Soluzione: OCR PDF pagina-per-pagina + integrazione testo selezionabile quando rilevata perdita contenuto.
+
+## Cosa monitorare ogni run
+- tempi run
+- qualità JSON blocchi/inline_spans
+- presenza PDF ricercabile
+- warning OCR
+
+7. Perdita testo in Markdown da JSON valido
+   - Causa: blocchi `list` senza `items` venivano quasi ignorati e `inline_spans` troncati con `...` sovrascrivevano il `content` completo.
+   - Soluzione: fallback parsing lista da `content` + uso `content` completo quando spans risultano troncati o troppo corti.
+
+8. Bassa fedeltà stile su PDF misti/raster
+   - Soluzione: percorso ibrido per PDF pagina-per-pagina: estrazione locale da testo selezionabile quando disponibile, Gemini vision per pagine raster.
+9. Errore `tesseract` mancante nel PATH
+   - Soluzione: verifica esplicita in setup con messaggio di installazione guidata.
+
+10. Setup dipendenze sistema automatico
+   - Soluzione: installer ora tenta installazione automatica di tesseract/ghostscript/qpdf via winget/choco.
+
+11. Winget non trova alcuni package ID
+   - Soluzione: introdotta lista di ID alternativi e distinzione dipendenze obbligatorie (tesseract/ghostscript) vs opzionali (qpdf).
+
+12. Ghostscript non sempre disponibile su Windows
+   - Soluzione: reso opzionale in setup; export PDF ricercabile configurato con `--output-type pdf` per ridurre dipendenza da Ghostscript.
+
+13. HTML/DOCX con stile poco affidabile
+   - Soluzione: export HTML/DOCX guidato da `inline_spans` e `style` del JSON (bold/italic/allineamento), con rendering inline reale.
+14. Tesseract installato ma non nel PATH attivo
+   - Soluzione: ricerca in percorsi standard e iniezione PATH runtime per il processo ocrmypdf.
+15. Errore ocrmypdf exit code 15 su file già esistente
+   - Soluzione: rimozione preventiva del file output prima del nuovo run.
