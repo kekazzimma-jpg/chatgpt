@@ -81,6 +81,60 @@ def fallback_document(source_filename: str, source_type: str, raw_text: str, war
     }
 
 
+_SPAN_COVERAGE_THRESHOLD = 0.40  # spans considerati incoerenti se coprono < 40% del content
+
+
+def spans_majority_style(spans: List[Dict[str, Any]]) -> Dict[str, bool]:
+    """Restituisce i flag di stile dominanti negli spans (>=50% del testo marcato)."""
+    total = 0
+    bold_len = italic_len = underline_len = allcaps_len = 0
+    for sp in spans:
+        if not isinstance(sp, dict):
+            continue
+        tlen = len(str(sp.get("text", "")))
+        if tlen == 0:
+            continue
+        total += tlen
+        if sp.get("bold"):
+            bold_len += tlen
+        if sp.get("italic"):
+            italic_len += tlen
+        if sp.get("underline"):
+            underline_len += tlen
+        if sp.get("all_caps"):
+            allcaps_len += tlen
+    if total <= 0:
+        return {"bold": False, "italic": False, "underline": False, "all_caps": False}
+    threshold = total / 2
+    return {
+        "bold": bold_len >= threshold,
+        "italic": italic_len >= threshold,
+        "underline": underline_len >= threshold,
+        "all_caps": allcaps_len >= threshold,
+    }
+
+
+def spans_look_incoherent(spans: List[Dict[str, Any]], content: str) -> bool:
+    """True se gli spans sembrano troncati o molto più corti del content.
+
+    Gli spans vengono considerati incoerenti quando:
+    - contengono "..." o "…" (troncatura) E il content è più lungo del joined;
+    - oppure la loro concatenazione pulita è < 40% del content (soglia allentata rispetto al 60%
+      precedente per non scattare su testi con molti spazi persi nella concatenazione).
+    """
+    if not spans or not content:
+        return False
+    joined = "".join(str(sp.get("text", "")) for sp in spans if isinstance(sp, dict))
+    joined_stripped = joined.strip()
+    if not joined_stripped:
+        return True
+    truncated = ("..." in joined or "…" in joined) and len(content) > len(joined)
+    # Floor a 5 caratteri (non 20): il vecchio floor a 20 faceva collassare legittimi blocchi
+    # brevi tipo "Oggetto: foo" anche quando gli spans coprivano perfettamente il content.
+    too_short = len(joined_stripped) < max(5, int(len(content) * _SPAN_COVERAGE_THRESHOLD))
+    return truncated or too_short
+
+
 def _normalize_block(block: Dict[str, Any], page_number: int, idx: int) -> Dict[str, Any]:
     t = block.get("type", "paragraph")
     if t not in ALLOWED_BLOCK_TYPES:
@@ -92,12 +146,19 @@ def _normalize_block(block: Dict[str, Any], page_number: int, idx: int) -> Dict[
     merged_style.update(style)
 
     spans = block.get("inline_spans") if isinstance(block.get("inline_spans"), list) else []
-    if spans:
-        joined = "".join(str(sp.get("text", "")) for sp in spans if isinstance(sp, dict))
-        if ("..." in joined or "…" in joined) and len(content) > len(joined):
-            spans = [{"text": content, "bold": False, "italic": False, "underline": False, "all_caps": False}]
-        elif len(joined.strip()) < max(20, int(len(content) * 0.6)):
-            spans = [{"text": content, "bold": False, "italic": False, "underline": False, "all_caps": False}]
+    if spans and spans_look_incoherent(spans, content):
+        # Gli spans sembrano troncati/incompleti: sostituiamo con un singolo span che copre
+        # tutto il content, ma PRESERVIAMO i flag di stile dominanti (es. blocco tutto bold
+        # resta bold anche dopo il collasso). Meglio di una vecchia perdita totale della
+        # formattazione inline.
+        majority = spans_majority_style(spans)
+        spans = [{
+            "text": content,
+            "bold": majority["bold"],
+            "italic": majority["italic"],
+            "underline": majority["underline"],
+            "all_caps": majority["all_caps"],
+        }]
     if not spans:
         spans = [{"text": content, "bold": False, "italic": False, "underline": False, "all_caps": False}]
 

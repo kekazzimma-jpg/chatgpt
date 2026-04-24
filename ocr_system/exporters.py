@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 import fitz
 import html
+from document_model import spans_look_incoherent, spans_majority_style
 def export_json(document: Dict[str, Any], out_path: Path) -> Path:
     out_path.write_text(json.dumps(document, ensure_ascii=False, indent=2), encoding="utf-8")
     return out_path
@@ -23,17 +24,16 @@ def _style_wrap_md(text: str, span: Dict[str, Any]) -> str:
     return t
 def _block_text_md(block: Dict[str, Any]) -> str:
     content = str(block.get("content", ""))
-    spans = block.get("inline_spans", [])
+    spans = block.get("inline_spans", []) if isinstance(block.get("inline_spans"), list) else []
     if spans:
-        joined_raw = "".join(str(s.get("text", "")) for s in spans)
-        if _is_truncated_span_text(joined_raw) and len(content) > len(joined_raw):
-            return content
-        if len(joined_raw.strip()) < max(20, int(len(content) * 0.6)):
-            return content
+        # Safety net: se gli spans sembrano incoerenti col content (dovrebbero essere già
+        # stati normalizzati, ma la rete non fa male), collassiamo in un unico span piatto
+        # conservando però i flag di stile dominanti — non rendiamo tutto neutro.
+        if spans_look_incoherent(spans, content):
+            majority = spans_majority_style(spans)
+            return _style_wrap_md(content, majority)
         return "".join(_style_wrap_md(str(s.get("text", "")), s) for s in spans)
     return content
-def _is_truncated_span_text(text: str) -> bool:
-    return "..." in text or "…" in text
 def _fallback_list_items_from_content(content: str) -> List[str]:
     lines = [ln.strip() for ln in content.splitlines() if ln.strip()]
     out: List[str] = []
@@ -215,6 +215,33 @@ def export_docx(document: Dict[str, Any], out_path: Path) -> Path:
         for block in page.get("blocks", []):
             t = block.get("type", "paragraph")
             style = block.get("style", {}) if isinstance(block.get("style"), dict) else {}
+
+            # list/table hanno contenuto strutturato (items/rows) e NON vogliono un paragrafo
+            # iniziale col content grezzo: nel DOCX finale duplicava lista/tabella.
+            if t == "list":
+                items = block.get("items", []) if isinstance(block.get("items"), list) else []
+                if not items:
+                    items = [{"content": x} for x in _fallback_list_items_from_content(str(block.get("content", "")))]
+                for item in items:
+                    lp = doc.add_paragraph(style="List Number" if block.get("list_type") == "ordered" else "List Bullet")
+                    lp.add_run(str(item.get("content", "")))
+                continue
+
+            if t == "table":
+                rows = block.get("rows", []) if isinstance(block.get("rows"), list) else []
+                headers = block.get("headers", []) if isinstance(block.get("headers"), list) else []
+                cols = max(len(headers), len(rows[0]) if rows and isinstance(rows[0], list) else 1)
+                table = doc.add_table(rows=1 if headers else 0, cols=cols)
+                if headers:
+                    for i, h in enumerate(headers):
+                        table.rows[0].cells[i].text = str(h)
+                for row in rows:
+                    if isinstance(row, list):
+                        cells = table.add_row().cells
+                        for i, c in enumerate(row[:cols]):
+                            cells[i].text = str(c)
+                continue
+
             if t == "heading":
                 level = max(1, min(3, int(block.get("level", 2))))
                 p = doc.add_heading(level=level)
@@ -239,30 +266,22 @@ def export_docx(document: Dict[str, Any], out_path: Path) -> Path:
                 r.underline = bool(sp.get("underline", False))
                 r.font.name = "Times New Roman"
                 r.font.size = Pt(size_pt(style.get("font_size_relative", "normal")))
-            if t == "list":
-                items = block.get("items", []) if isinstance(block.get("items"), list) else []
-                if not items:
-                    items = [{"content": x} for x in _fallback_list_items_from_content(str(block.get("content", "")))]
-                for item in items:
-                    lp = doc.add_paragraph(style="List Number" if block.get("list_type") == "ordered" else "List Bullet")
-                    lp.add_run(str(item.get("content", "")))
-            elif t == "table":
-                rows = block.get("rows", []) if isinstance(block.get("rows"), list) else []
-                headers = block.get("headers", []) if isinstance(block.get("headers"), list) else []
-                cols = max(len(headers), len(rows[0]) if rows and isinstance(rows[0], list) else 1)
-                table = doc.add_table(rows=1 if headers else 0, cols=cols)
-                if headers:
-                    for i, h in enumerate(headers):
-                        table.rows[0].cells[i].text = str(h)
-                for row in rows:
-                    if isinstance(row, list):
-                        cells = table.add_row().cells
-                        for i, c in enumerate(row[:cols]):
-                            cells[i].text = str(c)
     doc.save(out_path)
     return out_path
+def _pdf_looks_valid(path: Path) -> bool:
+    try:
+        if not path.exists() or path.stat().st_size < 1024:
+            return False
+        with path.open("rb") as fh:
+            head = fh.read(5)
+        return head == b"%PDF-"
+    except OSError:
+        return False
+
+
 def export_searchable_pdf(input_path: Path, out_path: Path) -> Path:
     import importlib.util
+    import logging
     import subprocess
     import sys
     if importlib.util.find_spec("ocrmypdf") is None:
@@ -278,7 +297,7 @@ def export_searchable_pdf(input_path: Path, out_path: Path) -> Path:
     env["PATH"] = tess_dir + os.pathsep + env.get("PATH", "")
     if out_path.exists():
         out_path.unlink()
-    subprocess.check_call([
+    cmd = [
         sys.executable,
         "-m",
         "ocrmypdf",
@@ -287,5 +306,22 @@ def export_searchable_pdf(input_path: Path, out_path: Path) -> Path:
         "--skip-text",
         "--output-type",
         "pdf",
-    ], env=env)
+    ]
+    try:
+        subprocess.check_call(cmd, env=env)
+    except subprocess.CalledProcessError as exc:
+        # ocrmypdf 16.10 + pikepdf>=9 fallisce in validazione finale con exit 15
+        # (AttributeError: 'Pdf' object has no attribute 'check'), ma il PDF ricercabile
+        # è già stato scritto su disco prima del crash. Se il file esiste ed è un PDF
+        # valido, accettiamolo comunque e segnaliamo il problema nel log — così
+        # l'utente ottiene il searchable.pdf invece di una conversione fallita.
+        if _pdf_looks_valid(out_path):
+            logging.warning(
+                "ocrmypdf uscito con exit %s ma il file di output esiste ed è un PDF valido: "
+                "probabilmente errore in validazione finale (incompatibilità pikepdf>=9). "
+                "Considero il PDF ricercabile generato. Per eliminare il warning: pin pikepdf<9.",
+                exc.returncode,
+            )
+            return out_path
+        raise
     return out_path

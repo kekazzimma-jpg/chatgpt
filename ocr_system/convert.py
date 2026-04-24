@@ -11,9 +11,11 @@ from exporters import export_docx, export_html, export_json, export_markdown, ex
 from ocr_core import ocr_to_document, resolve_api_key, resolve_model, resolve_requested_model_id
 
 
-def setup_logger(input_path: Path) -> Path:
-    out = input_path.parent / "OCR"
-    out.mkdir(exist_ok=True)
+def setup_logger(input_path: Path, output_dir: Path | None = None) -> Path:
+    # Se l'utente ha passato --output-dir, i log seguono la cartella scelta;
+    # altrimenti si usa la cartella OCR/ accanto al file sorgente.
+    out = output_dir if output_dir else input_path.parent / "OCR"
+    out.mkdir(parents=True, exist_ok=True)
     log = out / "ocr_debug.log"
 
     root = logging.getLogger()
@@ -45,7 +47,7 @@ def genera_output(file_originale: str, output_dir: str | None = None, formati: L
         raise SystemExit(f"File non trovato: {input_path}")
 
     out_dir = Path(output_dir).resolve() if output_dir else input_path.parent / "OCR"
-    out_dir.mkdir(exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     active_formats = _parse_formats(formati)
     if "pdf" not in active_formats:
@@ -105,8 +107,11 @@ def main() -> None:
     args = parser.parse_args()
 
     input_path = Path(args.input_file).expanduser().resolve()
-    log_path = setup_logger(input_path)
+    custom_out_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else None
+    log_path = setup_logger(input_path, custom_out_dir)
     logging.info("Input: %s", input_path)
+    if custom_out_dir:
+        logging.info("Output dir personalizzata: %s (log scritti qui)", custom_out_dir)
 
     try:
         fmt = [x.strip() for x in args.formats.split(",") if x.strip()]

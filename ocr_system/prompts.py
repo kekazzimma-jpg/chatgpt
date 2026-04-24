@@ -14,6 +14,25 @@ Vincoli fondamentali:
 - Inserisci inline_spans anche quando è presente un solo span.
 - Se il testo è poco leggibile, aggiungi warning in page_notes o document_info.warnings.
 
+Regole per inline_spans (fedeltà tipografica):
+- La concatenazione dei campi "text" di tutti gli inline_spans di un blocco DEVE coincidere esattamente col campo "content" del blocco (stessi caratteri, stessi spazi, stessa punteggiatura, senza tagli con "..."). Mai restituire spans parziali o troncati.
+- Quando dentro la stessa frase lo stile cambia, SPEZZA il testo in più spans consecutivi, uno per ogni porzione con stile omogeneo. Esempio: la frase «Il Dirigente **Mario Rossi** comunica quanto segue» diventa tre spans: {"text":"Il Dirigente ", bold:false}, {"text":"Mario Rossi", bold:true}, {"text":" comunica quanto segue", bold:false}.
+- Applica lo stesso criterio per corsivo, sottolineato e all_caps: ogni volta che il riconoscimento visivo rileva un cambio, chiudi lo span e aprine uno nuovo. Mantieni gli spazi attaccati allo span che li precede o li segue, non scartarli.
+- Se non riesci a distinguere con sicurezza lo stile di una porzione, usa bold/italic/underline/all_caps = false su quello span specifico, ma NON collassare tutto il blocco in un unico span piatto solo per prudenza.
+
+Regole per italic (corsivo) — attenzione specifica:
+- Il corsivo si riconosce dalle lettere inclinate verso destra rispetto alla linea di base, con tratti più sottili e spesso con glifi diversi (es. "a" a una gobba, "f" con coda lunga). Non confonderlo col grassetto (glifi più spessi ma dritti). Un testo può essere contemporaneamente bold E italic: in quel caso italic = true E bold = true, entrambi.
+- Nei documenti amministrativi italiani (delibere, decreti, ingiunzioni, ordinanze, determinazioni), i verbi-introduttori che aprono sezioni sono quasi sempre in corsivo (spesso corsivo grassetto) anche quando sono brevi e isolati sulla propria riga. Esempi ricorrenti: «Premesso», «Premesso che», «Considerato», «Considerato che», «Ritenuto», «Ritenuto di», «Visto», «Visti», «Vista», «Viste», «Atteso», «Attesa», «Richiamato», «Richiamata», «Dato atto», «Preso atto», «Sentito», «Letto», «Valutato», «Acquisito». Quando vedi una di queste parole introduttive seguita da due punti, virgola, o a capo, marcala italic = true (e bold = true solo se chiaramente più spessa del testo circostante, altrimenti bold = false).
+- Preferisci un falso positivo di italic a un falso negativo sui verbi-introduttori: è meglio marcare italic = true su «Premesso» anche in dubbio, piuttosto che perderlo sistematicamente.
+
+Regole per style.alignment (allineamento dei blocchi):
+- Valuta l'allineamento visivo del blocco sulla pagina, non solo il contenuto testuale.
+- "center" è frequente per: titoli, intestazioni, oggetti di lettera, firme, numeri di protocollo in testata. Se il blocco appare visibilmente centrato rispetto al margine sinistro e destro della pagina, marca alignment = "center", anche per testi brevi di una sola riga.
+- "right" quando il blocco è chiaramente addossato al margine destro (es. data in alto a destra, firma a destra).
+- "justify" quando il paragrafo ha entrambi i margini allineati e più righe lunghe.
+- "left" è il default, da usare solo se nessuna delle condizioni sopra è evidente.
+- Allinea i titoli (type = heading) con particolare attenzione: titoli centrati sono comuni in delibere, decreti, avvisi. Non forzare "left" per pigrizia.
+
 Schema richiesto:
 {
   "document_info": {

@@ -93,7 +93,7 @@ def resolve_requested_model_id(api_key: str, requested_model: str) -> str:
     raise SystemExit(f"Modello richiesto non trovato: {requested_model}")
 
 
-def render_pdf_pages_png(path: Path, dpi: int = 170) -> List[bytes]:
+def render_pdf_pages_png(path: Path, dpi: int = 220) -> List[bytes]:
     doc = fitz.open(path)
     images: List[bytes] = []
     for i in range(len(doc)):
@@ -116,6 +116,9 @@ def extract_json_text(raw: str) -> str:
     return m.group(0) if m else t
 
 
+TRANSIENT_HTTP_STATUSES = {429, 500, 502, 503, 504}
+
+
 def call_gemini_json(api_key: str, model: str, parts: List[dict], retries: int = 5) -> Dict[str, Any]:
     url = f"{GOOGLE_API_BASE}/{model}:generateContent?key={api_key}"
     payload = {"contents": [{"parts": parts}], "generationConfig": {"response_mime_type": "application/json"}}
@@ -124,8 +127,8 @@ def call_gemini_json(api_key: str, model: str, parts: List[dict], retries: int =
     for attempt in range(1, retries + 1):
         try:
             r = requests.post(url, json=payload, timeout=240)
-            if r.status_code in {429, 500, 502, 503, 504}:
-                raise requests.HTTPError("transient", response=r)
+            if r.status_code in TRANSIENT_HTTP_STATUSES:
+                raise requests.HTTPError(f"transient status {r.status_code}", response=r)
             r.raise_for_status()
             data = r.json()
             txt = data["candidates"][0]["content"]["parts"][0]["text"]
@@ -133,12 +136,20 @@ def call_gemini_json(api_key: str, model: str, parts: List[dict], retries: int =
         except Exception as exc:
             last = exc
             status = getattr(getattr(exc, "response", None), "status_code", None)
-            transient = status in {429, 500, 502, 503, 504} or isinstance(exc, requests.RequestException)
+            # Transitorio solo su status whitelistati o su errori di trasporto espliciti.
+            # HTTPError generico su 4xx non transitori (400/401/403/404/...) NON deve ritentare:
+            # mascherava API key errata, model id invalido o payload rotto.
+            transient = (
+                status in TRANSIENT_HTTP_STATUSES
+                or isinstance(exc, (requests.ConnectionError, requests.Timeout))
+            )
             if attempt < retries and transient:
                 wait_s = min(20, 2 ** (attempt - 1))
-                logging.warning("Errore Gemini (tentativo %s/%s, status=%s). Retry %ss", attempt, retries, status, wait_s)
+                logging.warning("Errore Gemini transitorio (tentativo %s/%s, status=%s). Retry %ss", attempt, retries, status, wait_s)
                 time.sleep(wait_s)
                 continue
+            if status is not None and status not in TRANSIENT_HTTP_STATUSES:
+                logging.error("Errore Gemini non transitorio (status=%s): nessun retry. %s", status, exc)
             break
     raise RuntimeError(f"Gemini JSON fallito: {last}")
 

@@ -2,3 +2,6 @@ PyMuPDF==1.26.0
 requests==2.32.3
 python-docx==1.1.2
 ocrmypdf==16.10.0
+# pikepdf<9 perché ocrmypdf 16.10 chiama ancora Pdf.check() rimosso in pikepdf 9.x
+# (sintomo: exit 15 con AttributeError in ocrmypdf/helpers.py::check_pdf).
+pikepdf>=8,<9
