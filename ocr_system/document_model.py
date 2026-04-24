@@ -176,6 +176,27 @@ def _normalize_block(block: Dict[str, Any], page_number: int, idx: int) -> Dict[
         if extra in block:
             out[extra] = block[extra]
 
+    # Fallback struttura tabella: se Gemini ha messo tutto nel content come
+    # "cella | cella\ncella | cella" ma non ha popolato rows/headers, proviamo
+    # a ricostruirla. Questo tiene gli exporter DOCX/HTML funzionanti anche
+    # quando il modello ignora le istruzioni del prompt sulle tabelle.
+    if t == "table":
+        rows_ok = isinstance(out.get("rows"), list) and out.get("rows")
+        if not rows_ok and "|" in content:
+            parsed_rows: List[List[str]] = []
+            for line in content.split("\n"):
+                line = line.strip()
+                if not line or "|" not in line:
+                    continue
+                cells = [c.strip() for c in line.split("|")]
+                parsed_rows.append(cells)
+            if parsed_rows:
+                max_cols = max(len(r) for r in parsed_rows)
+                parsed_rows = [r + [""] * (max_cols - len(r)) for r in parsed_rows]
+                if not isinstance(out.get("headers"), list) or not out.get("headers"):
+                    out["headers"] = []
+                out["rows"] = parsed_rows
+
     return out
 
 

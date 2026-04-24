@@ -222,6 +222,83 @@ Candidati per il prossimo batch, in ordine di impatto concreto vs rischio:
 
 ---
 
+## Ultimo test end-to-end reale
+
+Eseguito il 2026-04-24 su `C:\Users\Utente\OneDrive\ANTIABUSIVISMO\SOPRALLUOGHI\2026\COCOZZA\Ricorso.PDF` (20 pagine, atto amministrativo italiano). Log osservato: `OCR\ocr_run.log` (contiene due run: 23/04 su PC vecchio utente `crist`, 24/04 su PC attuale utente `Utente`).
+
+**Run 23/04 (PC vecchio, pikepdf 9.x ancora installato):**
+- Conversione completata con successo.
+- Compare l'`AttributeError: 'pikepdf._core.Pdf' object has no attribute 'check'` previsto, ma la rete di sicurezza di `exporters.py::export_searchable_pdf` lo intercetta: warning `ocrmypdf uscito con exit 15 ma il file di output esiste ed è un PDF valido`, poi tutti gli `[OK]` finali incluso `Ricorso.searchable.pdf`.
+- **Conferma sul campo che il fix del problema 8 funziona anche quando pikepdf resta a 9.x.**
+
+**Run 24/04 (PC attuale, `C:\Users\Utente\Desktop\OCR`):**
+- Falliscono le pagine 1 e 8 con `Errore Gemini transitorio (status=503)` → singolo retry ciascuna (retry ristretto del secondo batch → OK). Pagina 8 cade poi in `Fallback OCR JSON: Gemini JSON fallito: 'parts'` → fallback_document usato per quella pagina.
+- Ma il fallimento bloccante è altro: `The program 'gs' could not be executed or was not found on your system PATH` / `Could not find program 'gswin64c' on the PATH` → ocrmypdf esce con **exit 3**, `*.searchable.pdf` NON viene creato, `convert.py` rilancia `RuntimeError: PDF ricercabile obbligatorio non generato`.
+- Causa: **Ghostscript non è installato su questa macchina**. Il Run 23/04 funzionava solo perché sul PC vecchio Ghostscript c'era (confermato dalla riga `Image optimization ratio: 1.18 savings: 15.5%`, generata da `gs`).
+
+**Conclusione operativa:**
+
+Ghostscript è dichiarato "opzionale" in README e STATO perché usiamo `--skip-text --output-type pdf` (no PDF/A). **Nella realtà, su PDF multipagina con immagini, ocrmypdf 16.10 invoca `gs` nel post-processing (ottimizzazione/riscrittura) e senza di esso esce con status 3.** Su questo errore la rete di sicurezza non può intervenire: il file non viene scritto prima del crash.
+
+Azione richiesta sul PC prima di ri-testare: installare Ghostscript (`winget install --id GnuPG.Ghostscript -e` oppure `choco install ghostscript -y`), riaprire `cmd.exe`, verificare con `gswin64c --version`, poi rilanciare il test sullo stesso PDF.
+
+**Osservazione sul fronte italic:**
+
+L'utente ha ispezionato il `*.ocr.json` del Run 23/04: il prompt rafforzato (terzo batch) ha prodotto **falsi positivi** sui verbi-introduttori (alcuni marcati italic quando non lo erano) e ha continuato a **perdere italic reali** in altre porzioni di testo. Il solo prompt non è sufficiente come strategia. Questo rafforza l'esigenza del punto 2 del "Prossimo passo consigliato" (detection euristica post-Gemini in `_normalize_block`), ma probabilmente non basta da sola: andrà combinata con l'uso dei font name da PyMuPDF sulle pagine miste (opzione 2 del blocco "Percorsi residui").
+
+**Richiesta utente collaterale:** più informazioni a schermo in `cmd.exe` durante l'elaborazione. Oggi gli `INFO` dettagliati vanno solo su `ocr_debug.log`; su console arriva poco. Micro-task futuro: in `convert.py::setup_logger` duplicare il livello INFO anche sullo `StreamHandler` già presente (oggi filtrato), così l'utente vede in tempo reale le righe "OCR pagina X/N → percorso Y" e i warning. Rischio basso, utile.
+
+---
+
+## Prossimo passo consigliato (aggiornato 2026-04-24)
+
+1. **Installare Ghostscript sul PC attuale e ripetere il test su `Ricorso.PDF` 20 pagine.** È il blocco immediato. Se esce `[OK] Conversione completata` con il file `.searchable.pdf` presente, il multipagina è confermato funzionante sul nuovo ambiente.
+2. **Aggiornare README.md e STATO.md per spostare Ghostscript da "opzionale" a "consigliato/di fatto necessario su PDF multipagina".** Piccolo fix di documentazione, da fare solo dopo conferma al punto 1.
+3. **Valutare se `install_windows.py` debba marcare Ghostscript come obbligatorio** (oggi è tra gli "opzionali" con tentativo best-effort via winget/choco). Decisione: probabilmente sì, almeno avvisare forte se manca.
+4. **Micro-task: aumentare la verbosità di `convert.py` in console** (INFO visibili su stdout durante il run).
+5. **Rimane aperto il problema 9 italic.** Dopo l'analisi utente sul JSON: prompt alone non basta. Andare su detection euristica regex in `document_model.py::_normalize_block` + uso font name PyMuPDF (opzioni 1 e 2 di "Percorsi residui"). Da fare in un batch dedicato, non ora.
+
+---
+
+## Sessione 2026-04-24 (test reali + batch resilienza + fix tabelle)
+
+Batch tecnico concentrato su tre problemi emersi dai test reali. Files toccati: `ocr_core.py`, `prompts.py`, `document_model.py`. Nessuna modifica a `convert.py`, `exporters.py`.
+
+**Bug 1 — Una pagina Gemini fallita buttava via tutto il documento.** `_merge_pdf_pages` lasciava propagare l'eccezione fuori dal loop; `ocr_to_document` prendeva l'eccezione e invocava `fallback_document` per l'INTERO documento, buttando via tutto il lavoro già fatto sulle altre pagine. Sintomo: JSON/MD/HTML/DOCX con solo il fallback piatto, searchable.pdf OK (non dipende da questo path). Fix: try/except per-pagina interno al loop, la singola pagina fallita diventa una pagina di fallback, le altre proseguono normalmente.
+
+**Bug 2 — Errore `KeyError: 'parts'` oscuro.** `call_gemini_json` faceva `data["candidates"][0]["content"]["parts"][0]["text"]` e crashava con KeyError generico quando Gemini rispondeva 200 ma senza parts. Fix: try/except intorno a quell'accesso, logga `finishReason` e `promptFeedback.blockReason`. Risultato sul caso reale: abbiamo scoperto che il blocco era `finishReason=RECITATION` — il filtro Google anti-copia-verbatim di materiale di training (leggi italiane e sentenze TAR pubbliche). Non è disabilitabile via `safetySettings`.
+
+**Opzione 3 — Fallback tesseract per pagine bloccate da Gemini.** Nuova funzione `_tesseract_ocr_png_bytes` in `ocr_core.py` che invoca `tesseract.exe` (localizzato riusando `_find_tesseract_exe` di `exporters.py`) sul PNG già renderizzato. Sceglie lingua automaticamente: `ita+eng` > `ita` > `eng`. Il tesseract utente è tornato utile anche per questo dopo l'aggiunta di `ita.traineddata`. Quando il fallback tesseract produce testo, il content del blocco viene prefissato con un marker visibile in TUTTI gli output MD/HTML/DOCX: `[Pagina recuperata con OCR locale tesseract — il testo potrebbe contenere errori di riconoscimento e perde la formattazione originale.]`. Nuova helper `_page_text_fallback_doc(text, input_path, page_num, reason, is_secondary_ocr=False)`. Test reale su `Ricorso.PDF`: pagine 8-9 bloccate per RECITATION recuperate con 1108 e 1620 caratteri tesseract rispettivamente, marker presente in MD/HTML (2/2).
+
+**Bug 3 — Tabelle vuote nel DOCX.** Emerso su `Relazione Fasulo.pdf` (58 pagine raster, 25 tabelle nel JSON). Gemini metteva tutto il contenuto tabella dentro `content` come stringa con `|` separatore, senza popolare `headers`/`rows`. L'exporter DOCX in [exporters.py:230-243](ocr_system/exporters.py:230-243) legge solo `block["rows"]`/`block["headers"]`: col JSON vuoto creava tabelle 0×1 → tabelle invisibili nel documento Word. Fix doppio:
+- `prompts.py`: nuova sezione "Regole per table" con schema esplicito (`headers`, `rows` come array di array di stringhe, celle normalizzate al numero massimo di colonne), indicazioni sulle tabelle chiave-valore a 2 colonne (caratteristiche dei moduli/schede amministrativi), esempio completo nello schema.
+- `document_model.py::_normalize_block`: fallback parser deterministico. Quando `type == "table"` e `rows` è assente ma `content` contiene `|`, ricostruisce `rows` splittando per newline e `|`, normalizza tutte le righe al numero massimo di colonne. Non sovrascrive `rows`/`headers` se già forniti da Gemini (tested: due casi d'uso coperti).
+
+Re-run su `Relazione Fasulo.pdf` con il nuovo prompt: tabelle passate da 25 a 39 (Gemini ne riconosce di più perché le istruzioni sono più forti), **39/39 con `rows` popolati** (100%), 12 con `headers` non vuoti (le altre sono chiave-valore 2 colonne come da istruzione). Il DOCX risultante contiene 39 `<w:tbl>`, 126 `<w:tr>`, 316 `<w:tc>`: tabelle visibili come griglia Word, non più vuote. Warning `diacritics` tesseract scesi da 5 a 2 grazie a `ita.traineddata` installato dall'utente.
+
+**Verificato in questa sessione:**
+- Resilienza per-pagina su `Ricorso.PDF`: 20/20 pagine, 2 in fallback tesseract con marker, nessun collasso del documento intero.
+- Tabelle strutturate su `Relazione Fasulo.pdf`: 39 tabelle, DOCX con griglia vera.
+- Encoding UTF-8 corretto nel JSON (verificato bytewise: 96 `à` minuscole, 2 `À` maiuscole, 0 U+FFFD).
+- Image handling corretto su PDF con foto: Gemini marca come `image_placeholder` con descrizioni utili (`[DISEGNO TECNICO]`, `[PLANIMETRIA_DIAGRAM]`, `[Firma]`, `[Marche da bollo]`) invece di tentare OCR del contenuto fotografico. Comportamento richiesto dall'utente.
+
+**Problema collaterale documentato ma non risolto:** README/STATO dicono Ghostscript "opzionale", ma ocrmypdf 16.10 lo invoca di fatto per il post-processing di PDF multipagina (exit 3 se manca). Stesso per `ita.traineddata`: non installato di default, ha effetto sul fallback tesseract E sul searchable.pdf di tutto il documento. Vedi prossimo passo.
+
+---
+
+## Prossimo passo consigliato (aggiornato 2026-04-24 dopo fix tabelle)
+
+1. **Portabilità del progetto** — richiesta utente. Progetto ha molte dipendenze esterne (Python, Tesseract + `ita`, Ghostscript, più pacchetti Python). Opzioni:
+   - A) Migliorare `install_windows.py` per scaricare anche Ghostscript e `ita.traineddata` quando winget/choco mancano. Richiede Python preesistente.
+   - B) PyInstaller / Nuitka per produrre `.exe` standalone. Python non più richiesto, Tesseract/Ghostscript restano esterne.
+   - C) **Portable vero**: cartella autocontenuta con Python embeddable + Tesseract portable (con `ita`) + Ghostscript portable + venv preinstallato + tutte le dipendenze pip pre-scaricate. Da portare su pennetta e avviare ovunque. Preferenza utente: opzione C. Costo: ~500MB-1GB di bundle, più complesso da costruire e mantenere, ma zero prerequisiti sulla macchina di destinazione.
+   Da aprire in batch dedicato. Non iniziare finché non è confermato l'approccio.
+2. **Aggiornare README.md** per riflettere la verità operativa: Ghostscript de facto obbligatorio su multipagina, `ita.traineddata` consigliato, `pytesseract`/`tesseract-ocr ita` diventano parte del setup standard.
+3. **Continuare test reali** su PDF forniti dall'utente, con cartelle di output dedicate per ciascuno (`--output-dir` separato per file, pattern `PDFTEST\OCR\<stem>[_vN]\`).
+4. **Problema italic rimane aperto** (problema 9): detection euristica regex in `_normalize_block` + font name PyMuPDF (opzioni 1 e 2 di "Percorsi residui"). Da fare in batch dedicato, più avanti, dopo la portabilità.
+
+---
+
 ## Diario sintetico delle sessioni
 
 - **2026-04-23** — Creata la memoria condivisa del progetto: `AGENTS.md`, `CLAUDE.md`, `STATO.md` nella root. Nessuna modifica al codice OCR. Lettura completa del repo (`ocr_system/`) e mappatura di problemi aperti, decisioni prese, prossimo passo consigliato.
@@ -231,6 +308,7 @@ Candidati per il prossimo batch, in ordine di impatto concreto vs rischio:
   - `ocr_system/install_windows_context_menu.reg`: aggiunta intestazione commentata "FILE LEGACY - NON È IL METODO DI INSTALLAZIONE PRINCIPALE" con riferimento al flusso ufficiale (`setup_portable_windows.cmd` / `install_windows.py --register-only` / `refresh_context_menu.cmd`) e spiegazione delle differenze (HKCR vs HKCU, path hardcoded, niente launcher `run_ocr.cmd`). Allineate anche le etichette di menu nel file.
   - `ocr_system/README.md`: sezione 5 aggiornata alla nuova etichetta e chiarito che la cartella `OCR` contiene JSON + MD + HTML + DOCX + PDF ricercabile; sezione 16 "Per Ghostscript (opzionale ma consigliato)" → "opzionale, non richiesto dal flusso di default" per coerenza con la scelta `--skip-text --output-type pdf`.
   - `STATO.md`: aggiornata voce "Come si prova su Windows" con la nuova etichetta, segnati come risolti/parzialmente affrontati i problemi 1 e 7, aggiunto questo diario e prossimo passo invariato (retry Gemini).
+- **2026-04-24** — Test end-to-end reale su `Ricorso.PDF` (20 pagine). Nessuna modifica al codice. Esito: (a) fix problema 8 confermato sul Run 23/04 (PC vecchio con pikepdf 9.x); (b) Run 24/04 sul PC attuale fallisce con exit 3 di ocrmypdf per **Ghostscript mancante** — `gs`/`gswin64c` non in PATH; (c) utente conferma che il prompt rafforzato su italic genera falsi positivi e perde comunque corsivi reali: servirà detection euristica + font name PyMuPDF. Prossimo passo: installare Ghostscript e ripetere test. Aggiornato "Ultimo test end-to-end reale" e "Prossimo passo consigliato" in STATO.
 - **2026-04-23** — Secondo batch tecnico. File toccati:
   - `ocr_system/ocr_core.py`: `call_gemini_json` — condizione `transient` ristretta a status whitelistati (429/500/502/503/504) + `ConnectionError`/`Timeout`, estratta costante `TRANSIENT_HTTP_STATUSES`, aggiunto log `ERROR` dedicato quando lo status è non transitorio (niente più retry mascheranti su API key/model id invalidi).
   - `ocr_system/prompts.py`: aggiunte due sezioni "Regole per inline_spans" (spezzare a ogni cambio di stile, concatenazione spans = content) e "Regole per style.alignment" (enfasi su center, right, justify; attenzione ai titoli centrati in atti amministrativi).

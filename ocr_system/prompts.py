@@ -25,6 +25,16 @@ Regole per italic (corsivo) — attenzione specifica:
 - Nei documenti amministrativi italiani (delibere, decreti, ingiunzioni, ordinanze, determinazioni), i verbi-introduttori che aprono sezioni sono quasi sempre in corsivo (spesso corsivo grassetto) anche quando sono brevi e isolati sulla propria riga. Esempi ricorrenti: «Premesso», «Premesso che», «Considerato», «Considerato che», «Ritenuto», «Ritenuto di», «Visto», «Visti», «Vista», «Viste», «Atteso», «Attesa», «Richiamato», «Richiamata», «Dato atto», «Preso atto», «Sentito», «Letto», «Valutato», «Acquisito». Quando vedi una di queste parole introduttive seguita da due punti, virgola, o a capo, marcala italic = true (e bold = true solo se chiaramente più spessa del testo circostante, altrimenti bold = false).
 - Preferisci un falso positivo di italic a un falso negativo sui verbi-introduttori: è meglio marcare italic = true su «Premesso» anche in dubbio, piuttosto che perderlo sistematicamente.
 
+Regole per table (tabelle):
+- Quando riconosci una tabella (griglia di celle con bordi, o colonne di testo allineate visivamente, o una lista di coppie "etichetta : valore" organizzate come righe di tabella), usa type = "table" e fornisci SEMPRE la struttura in campi separati.
+- Campi obbligatori oltre a "content":
+    "headers": ["colonna 1", "colonna 2", ...]  // array di stringhe con le intestazioni. Se la tabella NON ha una riga di intestazione, usa [] (array vuoto).
+    "rows": [ ["cella 1,1", "cella 1,2", ...], ["cella 2,1", "cella 2,2", ...], ... ]  // array di array di stringhe. Ogni sotto-array è una riga; ogni stringa è una cella.
+- Il numero di celle in ogni riga deve corrispondere al numero di colonne (usa "" per celle vuote). Se righe diverse hanno un numero diverso di celle per come appaiono visivamente, uniforma al massimo e completa con "".
+- "content" della tabella DEVE essere una versione testuale leggibile della stessa tabella (es. righe separate da "\n", celle separate da " | "), così rimane utile anche per i lettori che non interpretano "rows". Non saltare questo campo.
+- Se la tabella è in realtà una lista bidimensionale di coppie chiave/valore (es. modulo compilato, scheda anagrafica con etichette sulla colonna sinistra e valori sulla destra), rendila come tabella a 2 colonne: "headers" = [] e "rows" = [[etichetta, valore], [etichetta, valore], ...].
+- Non comprimere una tabella in un solo paragrafo: deve restare type = "table" con "rows" popolato, anche quando ha poche righe.
+
 Regole per style.alignment (allineamento dei blocchi):
 - Valuta l'allineamento visivo del blocco sulla pagina, non solo il contenuto testuale.
 - "center" è frequente per: titoli, intestazioni, oggetti di lettera, firme, numeri di protocollo in testata. Se il blocco appare visibilmente centrato rispetto al margine sinistro e destro della pagina, marca alignment = "center", anche per testi brevi di una sola riga.
@@ -93,5 +103,15 @@ Schema richiesto:
       ]
     }
   ]
+}
+
+Nota: quando un blocco ha type = "table", il JSON del blocco DEVE includere anche i campi "headers" (array di stringhe) e "rows" (array di array di stringhe), in aggiunta ai campi standard sopra. Esempio:
+{
+  "id": "p1_b2", "type": "table", "reading_order": 2, "source_page": 1,
+  "content": "Colonna A | Colonna B\nvalore 1 | valore 2\nvalore 3 | valore 4",
+  "style": { ... },
+  "inline_spans": [ { "text": "Colonna A | Colonna B\n..." , "bold": false, "italic": false, "underline": false, "all_caps": false } ],
+  "headers": ["Colonna A", "Colonna B"],
+  "rows": [ ["valore 1", "valore 2"], ["valore 3", "valore 4"] ]
 }
 """.strip()
